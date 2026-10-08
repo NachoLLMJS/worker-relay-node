@@ -1,0 +1,28 @@
+{
+  "name": "worker-relay-node",
+  "version": "0.2.0",
+  "description": "Run an approved Worker Relay AI worker from a PC or VPS.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/worker-cli.ts",
+    "worker": "tsx src/worker-cli.ts",
+    "start": "node dist/src/worker-cli.js",
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "dotenv": "18.0.6",
+    "zod": "4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.0",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3",
+    "vitest": "5.0.3"
+  }
+}

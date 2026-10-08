@@ -1,0 +1,77 @@
+# Ubuntu VPS setup
+
+Use a dedicated unprivileged account. Do not run the worker as root.
+
+## Install
+
+```bash
+sudo adduser --disabled-password --gecos '' workerrelay
+sudo -iu workerrelay
+git clone https://github.com/NachoLLMJS/worker-relay-node.git
+cd worker-relay-node
+npm ci
+cp .env.example .env
+chmod 600 .env
+```
+
+Edit `.env` locally. Configure only approved capabilities and provider credentials.
+
+Verify:
+
+```bash
+npm test
+npm run typecheck
+npm run build
+npm run worker -- --once
+```
+
+## systemd
+
+As root, create `/etc/systemd/system/worker-relay.service`:
+
+```ini
+[Unit]
+Description=Worker Relay AI Node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=workerrelay
+WorkingDirectory=/home/workerrelay/worker-relay-node
+ExecStart=/usr/bin/npm run start
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/workerrelay/worker-relay-node
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now worker-relay
+sudo systemctl status worker-relay --no-pager
+```
+
+View sanitized operational logs with:
+
+```bash
+sudo journalctl -u worker-relay -n 100 --no-pager
+```
+
+The application never logs credential values. Still avoid sharing full logs publicly.
+
+## Update
+
+```bash
+sudo systemctl stop worker-relay
+sudo -iu workerrelay bash -lc 'cd ~/worker-relay-node && git pull --ff-only && npm ci && npm test && npm run typecheck && npm run build && npm run worker -- --once'
+sudo systemctl start worker-relay
+```
