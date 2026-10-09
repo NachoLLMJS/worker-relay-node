@@ -8,10 +8,12 @@ This repository is for a private, invite-only Worker Relay beta. Report vulnerab
 
 - The coordinator sends text prompts and a service ID.
 - The worker claims only service IDs listed in `WORKER_CAPABILITIES`.
+- Anonymous public jobs are rejected unless the operator explicitly sets `ACCEPT_PUBLIC_REQUESTS=true`.
 - Provider credentials remain on the worker machine.
 - The worker receives no PostgreSQL credentials, Railway administration credential, wallet key, or contract key.
 - The node makes outbound HTTPS requests and requires no inbound port.
 - Prompts are data. The worker does not execute shell commands or arbitrary code from prompts.
+- Codex and Claude Code subscription adapters run in a new empty temporary directory for every job, receive prompts through stdin, inherit only an environment allowlist, and have command/code/file/browser tools disabled.
 - Higgsfield is invoked with `spawn(..., { shell: false })`; prompt text is passed as one argument rather than interpreted by a shell.
 
 ## Operator rules
@@ -21,7 +23,7 @@ This repository is for a private, invite-only Worker Relay beta. Report vulnerab
 3. Set restrictive permissions on `.env`.
 4. Never commit or share `.env`.
 5. Enable only explicit capabilities.
-6. Treat OpenAI, Anthropic, DeepSeek, and Higgsfield capabilities as potentially billable.
+6. Treat API capabilities as potentially billable and subscription CLI capabilities as consuming plan allowance and rate limits.
 7. Configure provider-side budgets, alerts, and rate limits before continuous operation.
 8. Test one job with `--once` before enabling a background service.
 9. Stop immediately if the coordinator origin or TLS identity changes unexpectedly.
@@ -34,3 +36,4 @@ This repository is for a private, invite-only Worker Relay beta. Report vulnerab
 - Generated media URLs may be hosted by the selected provider and may expire.
 - The coordinator does not currently meter provider cost or reimburse worker owners.
 - Do not process secrets, regulated data, confidential source repositories, or personal documents.
+- Subscription CLI support is limited to text responses. It does not grant requesters access to the operator's filesystem or an interactive coding workspace.

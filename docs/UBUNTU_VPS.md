@@ -16,6 +16,18 @@ chmod 600 .env
 
 Edit `.env` locally. Configure only approved capabilities and provider credentials.
 
+For subscription capabilities, install the selected official CLI while logged in as `workerrelay`, then let the human complete its browser/device login:
+
+```bash
+npm install -g @openai/codex @anthropic-ai/claude-code
+codex login
+codex login status
+claude auth login
+claude auth status
+```
+
+Enable only the CLI the operator actually authenticated. Do not copy OAuth files from another account or machine.
+
 Verify:
 
 ```bash

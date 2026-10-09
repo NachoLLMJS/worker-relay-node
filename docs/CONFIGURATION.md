@@ -8,6 +8,7 @@ The worker loads `.env` from the repository root through `dotenv`. `.env` is ign
 - `WORKER_ACCESS_TOKEN` — private network credential supplied by the operator.
 - `WORKER_NAME` — unique ID matching `[A-Za-z0-9_-]{3,64}`.
 - `WORKER_CAPABILITIES` — comma-separated explicit allowlist.
+- `ACCEPT_PUBLIC_REQUESTS` — defaults to `false`; set to `true` only to let anonymous requests use this worker's enabled capabilities.
 
 ## Ollama
 
@@ -26,6 +27,24 @@ Capability: `text.ollama`.
 
 Capabilities: `text.openai.chatgpt`, `text.openai.sol`, `image.openai.gpt-image-2`.
 
+## ChatGPT subscription through Codex
+
+- `SUBSCRIPTION_CLI_ENABLED` — must be exactly `true` before any subscription CLI capability starts.
+- `CODEX_COMMAND` — default `codex`.
+- `CODEX_MODEL` — optional Codex model override; blank uses the authenticated plan's default.
+
+Install and authenticate locally:
+
+```text
+npm install -g @openai/codex
+codex login
+codex login status
+```
+
+Capability: `text.openai.codex`.
+
+The startup check requires Codex to report `Logged in using ChatGPT`. Jobs run ephemerally in an empty temporary directory with model-generated shell and other external tools disabled. On Windows, run the worker and Codex together inside WSL.
+
 ## Anthropic
 
 - `ANTHROPIC_API_KEY` — required for Fable.
@@ -33,6 +52,24 @@ Capabilities: `text.openai.chatgpt`, `text.openai.sol`, `image.openai.gpt-image-
 - `ANTHROPIC_FABLE_MODEL` — default `claude-fable-4-6`.
 
 Capability: `text.anthropic.fable`.
+
+## Claude subscription through Claude Code
+
+- `SUBSCRIPTION_CLI_ENABLED` — must be exactly `true`.
+- `CLAUDE_CODE_COMMAND` — default `claude`.
+- `CLAUDE_CODE_MODEL` — optional model alias or exact model ID; blank uses the authenticated plan's default.
+
+Install and authenticate locally:
+
+```text
+npm install -g @anthropic-ai/claude-code
+claude auth login
+claude auth status
+```
+
+Capability: `text.anthropic.claude-code`.
+
+The worker requires a logged-in CLI. Jobs use non-interactive print mode with safe mode, restricted mode, no session persistence, no MCP servers, no permission prompts, and no tools. Anthropic account terms and plan limits remain the operator's responsibility.
 
 ## DeepSeek
 
@@ -78,6 +115,13 @@ Hosted text:
 WORKER_CAPABILITIES=text.openai.chatgpt,text.openai.sol,text.anthropic.fable,text.deepseek.flash,text.deepseek.v4-pro
 ```
 
+Subscriptions first, APIs still available separately:
+
+```text
+SUBSCRIPTION_CLI_ENABLED=true
+WORKER_CAPABILITIES=text.openai.codex,text.anthropic.claude-code,text.openai.chatgpt,text.anthropic.fable
+```
+
 Image and video:
 
 ```text
@@ -85,4 +129,4 @@ WORKER_CAPABILITIES=image.openai.gpt-image-2,image.higgsfield.nano-banana-2,vide
 HIGGSFIELD_ENABLED=true
 ```
 
-Unknown capability IDs are rejected. Missing credentials fail at startup before a job is claimed.
+Unknown capability IDs are rejected. Missing API credentials, disabled subscription opt-in, unavailable CLIs, and missing local subscription login all fail at startup before a job is claimed.

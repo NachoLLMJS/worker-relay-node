@@ -24,6 +24,8 @@ Copy-Item .env.example .env
 
 Open `.env`, paste the private `WORKER_ACCESS_TOKEN` supplied by the network operator, choose `WORKER_CAPABILITIES`, and add only the provider credentials needed by those capabilities.
 
+Anonymous public jobs are disabled by default. Set `ACCEPT_PUBLIC_REQUESTS=true` only if you deliberately want those jobs to consume the capabilities, subscriptions, API credits, and local compute enabled on this worker.
+
 Test one cycle:
 
 ```bash
@@ -43,7 +45,9 @@ Text and chat:
 - `text.ollama` — local Ollama model; no hosted-model account required.
 - `text.openai.chatgpt` — ChatGPT through OpenAI Responses API.
 - `text.openai.sol` — OpenAI Sol.
+- `text.openai.codex` — Codex CLI using the operator's local ChatGPT subscription login.
 - `text.anthropic.fable` — Claude Fable through Anthropic Messages API.
+- `text.anthropic.claude-code` — Claude Code CLI using the operator's local Claude subscription login.
 - `text.deepseek.flash` — DeepSeek Flash through the official DeepSeek Chat API.
 - `text.deepseek.v4-pro` — DeepSeek V4 Pro through the official DeepSeek Chat API.
 
@@ -66,7 +70,7 @@ Example capability list:
 WORKER_CAPABILITIES=text.ollama,text.openai.sol,text.anthropic.fable,text.deepseek.flash,video.higgsfield.seedance-2.5
 ```
 
-The node never enables a hosted provider automatically. Every capability must be explicitly listed. Hosted OpenAI, Anthropic, DeepSeek, and Higgsfield jobs can consume the worker owner's account credits even though the private beta does not charge requesters.
+The node never enables a hosted provider automatically. Every capability must be explicitly listed. API-backed jobs can consume provider credits, while Codex and Claude Code jobs consume the locally authenticated plan's allowance. Provider terms, plan limits, and eligibility remain the worker operator's responsibility.
 
 ## Provider setup
 
@@ -84,9 +88,13 @@ Keep `OLLAMA_BASE_URL=http://127.0.0.1:11434` and select the downloaded model wi
 
 Set `OPENAI_API_KEY` in `.env`. The defaults can be overridden with `OPENAI_CHATGPT_MODEL`, `OPENAI_SOL_MODEL`, and `OPENAI_IMAGE_MODEL`. GPT Image uses OpenAI directly; it is not routed through Higgsfield.
 
+For subscription-backed text jobs, install Codex, run `codex login`, confirm `codex login status` reports a ChatGPT login, set `SUBSCRIPTION_CLI_ENABLED=true`, and enable `text.openai.codex`. Codex runs in an empty temporary directory with shell, browser, computer-use, app, skill, and workspace tools disabled. On Windows, OpenAI currently recommends using Codex inside WSL.
+
 ### Anthropic
 
 Set `ANTHROPIC_API_KEY` in `.env`. Override Fable with `ANTHROPIC_FABLE_MODEL` only when the current account uses a different exact model ID.
+
+For subscription-backed text jobs, install Claude Code, run `claude auth login`, confirm `claude auth status` shows a logged-in Claude account, set `SUBSCRIPTION_CLI_ENABLED=true`, and enable `text.anthropic.claude-code`. The adapter uses print mode, restricted mode, safe mode, no session persistence, no MCP servers, and an empty tool list.
 
 ### DeepSeek
 
@@ -117,7 +125,7 @@ Then set `HIGGSFIELD_ENABLED=true`. Genjutsu's invocation ID is discovered from 
 - No inbound port is required.
 - Never commit `.env` or paste credentials into chat, issues, screenshots, or logs.
 - Use a dedicated OS account and a machine without wallets, SSH keys, unrelated repositories, or personal files.
-- The worker executes approved adapters only. It does not execute code contained in user prompts.
+- The worker executes approved adapters only. Subscription CLI prompts are text-only: requester prompts are sent through stdin, sensitive worker environment variables are removed, and code/shell/file/browser tools are disabled.
 - Start with Ollama or one low-risk capability and expand only after a successful `--once` run.
 
 ## Development verification

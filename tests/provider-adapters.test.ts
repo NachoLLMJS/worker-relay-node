@@ -4,6 +4,7 @@ import { generateWithDeepSeek } from "../src/deepseek-adapter.js";
 import { generateWithHiggsfield } from "../src/higgsfield-adapter.js";
 import { generateWithOpenAI } from "../src/openai-adapter.js";
 import { buildWorkerExecutor } from "../src/provider-registry.js";
+import { generateWithClaudeCodeSubscription, generateWithCodexSubscription, subscriptionCliIsLoggedIn } from "../src/subscription-cli-adapter.js";
 
 describe("hosted text adapters", () => {
   it("calls the OpenAI Responses API and returns output text", async () => {
@@ -54,6 +55,55 @@ describe("Higgsfield adapter", () => {
   });
 });
 
+describe("subscription CLI adapters", () => {
+  it("accepts Codex login status when the CLI writes it to stderr", () => {
+    expect(subscriptionCliIsLoggedIn("codex", "", "Logged in using ChatGPT\n")).toBe(true);
+  });
+
+  it("runs Codex in an ephemeral text-only sandbox and parses its final message", async () => {
+    const runner = vi.fn(async (input: { command: string; args: string[]; env: NodeJS.ProcessEnv; stdin: string }) => {
+      expect(input.command).toBe("codex-test");
+      expect(input.args).toEqual(expect.arrayContaining([
+        "exec", "--ignore-user-config", "--ignore-rules", "--skip-git-repo-check", "--ephemeral",
+        "--sandbox", "read-only", "--disable", "shell_tool", "--json"
+      ]));
+      expect(input.args.at(-1)).toBe("-");
+      expect(input.args).not.toContain("review this function");
+      expect(input.stdin).toContain("review this function");
+      expect(input.env.WORKER_ACCESS_TOKEN).toBeUndefined();
+      expect(input.env.OPENAI_API_KEY).toBeUndefined();
+      return '{"type":"item.completed","item":{"type":"agent_message","text":"Codex subscription result"}}\n';
+    });
+    await expect(generateWithCodexSubscription({
+      command: "codex-test",
+      prompt: "review this function",
+      sourceEnv: { PATH: "test-path", HOME: "test-home", WORKER_ACCESS_TOKEN: "secret", OPENAI_API_KEY: "secret" },
+      runner
+    })).resolves.toBe("Codex subscription result");
+  });
+
+  it("runs Claude Code without tools and parses its JSON result", async () => {
+    const runner = vi.fn(async (input: { command: string; args: string[]; env: NodeJS.ProcessEnv; stdin: string }) => {
+      expect(input.command).toBe("claude-test");
+      expect(input.args).toEqual(expect.arrayContaining([
+        "--print", "--output-format", "json", "--max-turns", "1", "--no-session-persistence",
+        "--safe-mode", "--restricted", "--strict-mcp-config", "--tools", ""
+      ]));
+      expect(input.args).not.toContain("explain this code");
+      expect(input.stdin).toContain("explain this code");
+      expect(input.env.WORKER_ACCESS_TOKEN).toBeUndefined();
+      expect(input.env.ANTHROPIC_API_KEY).toBeUndefined();
+      return JSON.stringify({ type: "result", subtype: "success", result: "Claude subscription result" });
+    });
+    await expect(generateWithClaudeCodeSubscription({
+      command: "claude-test",
+      prompt: "explain this code",
+      sourceEnv: { PATH: "test-path", HOME: "test-home", WORKER_ACCESS_TOKEN: "secret", ANTHROPIC_API_KEY: "secret" },
+      runner
+    })).resolves.toBe("Claude subscription result");
+  });
+});
+
 describe("worker provider registry", () => {
   it("requires explicit capabilities and fails closed when a hosted credential is missing", () => {
     expect(() => buildWorkerExecutor({ WORKER_CAPABILITIES: "text.openai.sol" })).toThrow("OPENAI_API_KEY is required");
@@ -67,5 +117,19 @@ describe("worker provider registry", () => {
       DEEPSEEK_API_KEY: "configured"
     });
     expect(worker.capabilities).toEqual(["text.ollama", "text.anthropic.fable", "text.deepseek.v4-pro"]);
+  });
+
+  it("requires explicit subscription CLI opt-in and verifies local login before advertising it", () => {
+    expect(() => buildWorkerExecutor({ WORKER_CAPABILITIES: "text.openai.codex" })).toThrow("SUBSCRIPTION_CLI_ENABLED=true is required");
+    const probe = vi.fn();
+    const worker = buildWorkerExecutor({
+      WORKER_CAPABILITIES: "text.openai.codex,text.anthropic.claude-code",
+      SUBSCRIPTION_CLI_ENABLED: "true",
+      CODEX_COMMAND: "codex-test",
+      CLAUDE_CODE_COMMAND: "claude-test"
+    }, { subscriptionProbe: probe });
+    expect(probe).toHaveBeenCalledWith("codex", "codex-test", expect.any(Object));
+    expect(probe).toHaveBeenCalledWith("claude-code", "claude-test", expect.any(Object));
+    expect(worker.capabilities).toEqual(["text.openai.codex", "text.anthropic.claude-code"]);
   });
 });

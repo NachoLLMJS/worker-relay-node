@@ -29,6 +29,8 @@ https://api-production-cc9f.up.railway.app
    - Ollama: install it, pull the approved model, and verify its local API.
    - OpenAI: add the credential locally and never echo it.
    - Anthropic: add the credential locally and never echo it.
+   - Codex subscription: install the official Codex CLI, have the human complete `codex login`, verify `codex login status`, and enable only `text.openai.codex`.
+   - Claude subscription: install Claude Code, have the human complete `claude auth login`, verify `claude auth status`, and enable only `text.anthropic.claude-code`.
    - DeepSeek: add `DEEPSEEK_API_KEY` locally, select only `text.deepseek.flash` and/or `text.deepseek.v4-pro`, and never echo the credential.
    - Higgsfield: install the official CLI, authenticate interactively, verify `higgsfield account status`, and set `HIGGSFIELD_ENABLED=true`.
 8. Run `npm test`, `npm run typecheck`, `npm run build`, and `npm audit`.
@@ -44,6 +46,8 @@ https://api-production-cc9f.up.railway.app
 - Never open an inbound firewall port for this worker.
 - Never run the worker as root or Administrator for continuous operation.
 - Never run it on a machine containing wallets, signing keys, personal documents, or unrelated production credentials.
+- Never copy OAuth tokens, browser cookies, CLI credential files, or subscription sessions into `.env` or chat. The human authenticates directly with the official CLI.
+- Set `SUBSCRIPTION_CLI_ENABLED=true` only after the operator explicitly approves plan usage and the selected CLI reports a valid local login.
 - Stop if TLS validation fails, the coordinator origin differs, provider authentication is rejected, or the repository has unexpected uncommitted executable changes.
 - Higgsfield generation can consume credits. Require explicit `HIGGSFIELD_ENABLED=true` plus explicit Higgsfield capability IDs.
 - For Genjutsu, discover the exact current model ID from the authenticated Higgsfield model list. Do not guess it.

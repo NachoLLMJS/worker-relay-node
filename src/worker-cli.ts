@@ -12,6 +12,7 @@ const apiUrl = required("COORDINATOR_URL");
 const workerToken = required("WORKER_ACCESS_TOKEN");
 const workerId = process.env.WORKER_NAME?.trim() || "friend-worker-1";
 const provider = buildWorkerExecutor();
+const acceptPublicRequests = process.env.ACCEPT_PUBLIC_REQUESTS?.trim().toLowerCase() === "true";
 const once = process.argv.includes("--once");
 
 async function cycle() {
@@ -20,6 +21,7 @@ async function cycle() {
     workerId,
     workerToken,
     capabilities: provider.capabilities,
+    acceptPublicRequests,
     execute: provider.execute
   });
   console.log(JSON.stringify({ time: new Date().toISOString(), workerId, result }));

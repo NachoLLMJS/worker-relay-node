@@ -13,6 +13,7 @@ export async function runWorkerOnce(input: {
   workerId: string;
   workerToken: string;
   capabilities: string[];
+  acceptPublicRequests?: boolean;
   fetcher?: Fetcher;
   execute: (job: { id: string; prompt: string; serviceId: string }) => Promise<string>;
 }): Promise<"idle" | "completed"> {
@@ -26,7 +27,7 @@ export async function runWorkerOnce(input: {
   const claim = await fetcher(`${base}/api/worker/claim`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ capabilities: input.capabilities })
+    body: JSON.stringify({ capabilities: input.capabilities, acceptPublicRequests: input.acceptPublicRequests ?? false })
   });
   if (claim.status === 204) return "idle";
   if (!claim.ok) throw new Error(`claim failed (${claim.status})`);
