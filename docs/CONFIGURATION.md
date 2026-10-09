@@ -18,12 +18,13 @@ Capability: `text.ollama`.
 
 ## OpenAI
 
-- `OPENAI_API_KEY` — required for either OpenAI capability.
+- `OPENAI_API_KEY` — required for any enabled OpenAI capability.
 - `OPENAI_BASE_URL` — optional; default is the official OpenAI API origin.
 - `OPENAI_CHATGPT_MODEL` — default `gpt-5.4-mini`.
 - `OPENAI_SOL_MODEL` — default `openai-sol-2026-07-20`.
+- `OPENAI_IMAGE_MODEL` — default `gpt-image-2`; used by the native OpenAI Images API.
 
-Capabilities: `text.openai.chatgpt`, `text.openai.sol`.
+Capabilities: `text.openai.chatgpt`, `text.openai.sol`, `image.openai.gpt-image-2`.
 
 ## Anthropic
 
@@ -41,7 +42,7 @@ Capability: `text.anthropic.fable`.
 
 Image capabilities:
 
-- `image.higgsfield.gpt-image-2.5`
+- `image.openai.gpt-image-2` — OpenAI, not Higgsfield.
 - `image.higgsfield.nano-banana-2`
 - `image.higgsfield.seedream-5-pro`
 - `image.higgsfield.recraft-4.1`
@@ -71,7 +72,7 @@ WORKER_CAPABILITIES=text.openai.chatgpt,text.openai.sol,text.anthropic.fable
 Image and video:
 
 ```text
-WORKER_CAPABILITIES=image.higgsfield.gpt-image-2.5,image.higgsfield.nano-banana-2,video.higgsfield.seedance-2.5
+WORKER_CAPABILITIES=image.openai.gpt-image-2,image.higgsfield.nano-banana-2,video.higgsfield.seedance-2.5
 HIGGSFIELD_ENABLED=true
 ```
 

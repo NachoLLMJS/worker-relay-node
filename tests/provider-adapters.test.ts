@@ -14,6 +14,15 @@ describe("hosted text adapters", () => {
     await expect(generateWithOpenAI({ apiKey: "openai-key", model: "openai-sol-2026-07-20", prompt: "hello", fetcher })).resolves.toBe("Hello from Sol");
   });
 
+  it("calls the OpenAI Images API and returns a generated image data URL", async () => {
+    const fetcher = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+      expect(String(input)).toBe("https://api.openai.com/v1/images/generations");
+      expect(JSON.parse(String(init?.body))).toEqual({ model: "gpt-image-2", prompt: "global AI network", size: "1536x1024", output_format: "webp", output_compression: 85 });
+      return new Response(JSON.stringify({ data: [{ b64_json: "aW1hZ2U=" }] }), { status: 200 });
+    });
+    await expect(generateWithOpenAI({ apiKey: "openai-key", model: "gpt-image-2", prompt: "global AI network", kind: "image", fetcher })).resolves.toBe("data:image/webp;base64,aW1hZ2U=");
+  });
+
   it("calls Anthropic Messages and returns Fable text", async () => {
     const fetcher = vi.fn(async (_input: URL | RequestInfo, init?: RequestInit) => {
       expect(init?.headers).toMatchObject({ "x-api-key": "anthropic-key", "anthropic-version": "2023-06-01" });

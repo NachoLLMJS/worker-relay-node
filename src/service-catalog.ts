@@ -52,13 +52,14 @@ const services = [
     configurableModel: "ANTHROPIC_FABLE_MODEL"
   },
   {
-    id: "image.higgsfield.gpt-image-2.5",
-    label: "GPT Image 2.5",
+    id: "image.openai.gpt-image-2",
+    label: "GPT Image 2",
     kind: "image",
-    provider: "Higgsfield",
-    description: "High-fidelity images, graphic design and reliable on-image text.",
-    executor: "higgsfield",
-    modelId: "gpt_image_2_5"
+    provider: "OpenAI",
+    description: "Native OpenAI image generation with the worker operator's OpenAI account.",
+    executor: "openai",
+    modelId: "gpt-image-2",
+    configurableModel: "OPENAI_IMAGE_MODEL"
   },
   {
     id: "image.higgsfield.nano-banana-2",

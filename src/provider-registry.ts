@@ -15,8 +15,6 @@ function required(env: Env, name: string): string {
 
 function higgsfieldArgs(serviceId: string): string[] {
   switch (serviceId) {
-    case "image.higgsfield.gpt-image-2.5":
-      return ["--aspect_ratio", "1:1", "--resolution", "2k"];
     case "image.higgsfield.nano-banana-2":
       return ["--aspect_ratio", "1:1"];
     case "image.higgsfield.seedream-5-pro":
@@ -65,6 +63,7 @@ export function buildWorkerExecutor(env: Env = process.env) {
         return generateWithOpenAI({
           apiKey: required(env, "OPENAI_API_KEY"),
           model: (service.configurableModel && env[service.configurableModel]?.trim()) || service.modelId!,
+          kind: service.kind === "image" ? "image" : "text",
           baseUrl: env.OPENAI_BASE_URL?.trim(),
           prompt: job.prompt
         });

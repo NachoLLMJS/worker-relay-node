@@ -45,9 +45,9 @@ Text and chat:
 - `text.openai.sol` — OpenAI Sol.
 - `text.anthropic.fable` — Claude Fable through Anthropic Messages API.
 
-Images through Higgsfield:
+Images:
 
-- `image.higgsfield.gpt-image-2.5`
+- `image.openai.gpt-image-2` — GPT Image through the native OpenAI Images API.
 - `image.higgsfield.nano-banana-2`
 - `image.higgsfield.seedream-5-pro`
 - `image.higgsfield.recraft-4.1`
@@ -80,7 +80,7 @@ Keep `OLLAMA_BASE_URL=http://127.0.0.1:11434` and select the downloaded model wi
 
 ### OpenAI
 
-Set `OPENAI_API_KEY` in `.env`. The defaults can be overridden with `OPENAI_CHATGPT_MODEL` and `OPENAI_SOL_MODEL`.
+Set `OPENAI_API_KEY` in `.env`. The defaults can be overridden with `OPENAI_CHATGPT_MODEL`, `OPENAI_SOL_MODEL`, and `OPENAI_IMAGE_MODEL`. GPT Image uses OpenAI directly; it is not routed through Higgsfield.
 
 ### Anthropic
 
