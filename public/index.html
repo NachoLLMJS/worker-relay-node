@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Worker Command Center</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="#overview" aria-label="Worker Command Center home"><span class="brand-glyph">H</span><span><strong>WORKER</strong><small>LOCAL COMMAND</small></span></a>
+      <nav aria-label="Dashboard navigation">
+        <button class="nav-item active" data-view="overview" type="button"><span>01</span>Overview</button>
+        <button class="nav-item" data-view="terminal" type="button"><span>02</span>Terminal</button>
+        <button class="nav-item" data-view="models" type="button"><span>03</span>Models</button>
+        <button class="nav-item" data-view="jobs" type="button"><span>04</span>Jobs</button>
+        <button class="nav-item" data-view="identity" type="button"><span>05</span>Identity</button>
+      </nav>
+      <div class="sidebar-foot"><span class="local-dot"></span><div><strong>LOCAL ONLY</strong><small>127.0.0.1</small></div></div>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div><p class="kicker">WORKER COMMAND CENTER</p><h1 id="page-title">Overview</h1></div>
+        <div class="top-actions"><div id="connection-pill" class="connection-pill"><i></i><span>Starting…</span></div><button id="worker-toggle" class="primary-action" type="button">Start worker</button></div>
+      </header>
+
+      <section id="view-overview" class="view active" data-view-panel="overview">
+        <div class="metric-grid">
+          <article><span>CONNECTION</span><strong id="metric-connection">Offline</strong><small id="metric-contact">No coordinator contact</small></article>
+          <article><span>COMPLETED</span><strong id="metric-completed">0</strong><small>Jobs completed by this session</small></article>
+          <article><span>ACTIVE MODELS</span><strong id="metric-models">0</strong><small id="metric-models-copy">No capabilities active</small></article>
+          <article><span>PUBLIC JOBS</span><strong id="metric-public">Off</strong><small>Operator-controlled spending boundary</small></article>
+        </div>
+        <div class="overview-grid">
+          <section class="panel terminal-panel compact-terminal"><div class="panel-heading"><div><span>LIVE PROCESS</span><h2>Worker terminal</h2></div><button class="text-action" data-jump="terminal" type="button">Open terminal →</button></div><div id="overview-terminal" class="terminal-feed"></div></section>
+          <aside class="panel node-panel"><div class="panel-heading"><div><span>LOCAL NODE</span><h2>Connection control</h2></div></div><dl><div><dt>Worker ID</dt><dd id="worker-id">—</dd></div><div><dt>Runtime</dt><dd id="runtime-state">Stopped</dd></div><div><dt>Current activity</dt><dd id="activity-state">Idle</dd></div><div><dt>Failed cycles</dt><dd id="failed-cycles">0</dd></div></dl><label class="switch-row"><span><strong>Accept public requests</strong><small>May use local compute, subscriptions, or API credits</small></span><input id="public-jobs-toggle" type="checkbox"><i></i></label></aside>
+        </div>
+        <section class="panel recent-panel"><div class="panel-heading"><div><span>RECENT OUTPUT</span><h2>Latest completed work</h2></div><button class="text-action" data-jump="jobs" type="button">All jobs →</button></div><div id="recent-jobs" class="recent-jobs empty-copy">No work completed on this machine yet.</div></section>
+      </section>
+
+      <section id="view-terminal" class="view" data-view-panel="terminal" hidden><div class="page-intro"><p>Real-time local events from polling, leases, models, and completed jobs.</p><button id="clear-terminal" class="secondary-action" type="button">Clear visual log</button></div><section class="panel terminal-panel full-terminal"><div class="terminal-chrome"><span></span><span></span><span></span><b>worker-relay — local session</b></div><div id="terminal-feed" class="terminal-feed" aria-live="polite"></div></section></section>
+
+      <section id="view-models" class="view" data-view-panel="models" hidden><div class="page-intro"><p>Only capabilities validated when the worker started can be enabled here. Credentials never leave this computer.</p></div><div id="models-grid" class="models-grid"></div></section>
+
+      <section id="view-jobs" class="view" data-view-panel="jobs" hidden><div class="page-intro"><p>Local session history for jobs claimed and completed by this worker.</p></div><section class="panel table-panel"><div class="table-wrap"><table id="jobs-table"><thead><tr><th>Job</th><th>Service</th><th>Prompt</th><th>Status</th><th>Completed</th></tr></thead><tbody id="jobs-body"></tbody></table></div><div id="jobs-empty" class="empty-state">No jobs have been claimed during this local session.</div></section></section>
+
+      <section id="view-identity" class="view" data-view-panel="identity" hidden><div class="identity-grid"><section class="panel identity-card"><span class="future-tag">FUTURE PHASE</span><h2>Worker identity and wallet verification</h2><p>Blockchain verification is not active. No wallet request, signature, payment, token reward, or fee distribution is performed by this dashboard today.</p><div class="identity-placeholder"><span>◇</span><div><strong>Wallet not required in the current beta</strong><small>A future contract can bind a wallet to a verified worker without exposing provider credentials.</small></div></div><button class="disabled-action" type="button" disabled>Contracts not deployed</button></section><section class="panel roadmap-card"><span>PLANNED BOUNDARY</span><ol><li><b>01</b><div><strong>Explicit wallet connection</strong><p>Only after a deliberate click and only on the selected production chain.</p></div></li><li><b>02</b><div><strong>Worker ownership proof</strong><p>Bind the local worker identity to a wallet without putting private keys on Railway.</p></div></li><li><b>03</b><div><strong>Future payments and token fees</strong><p>Remain disabled until contracts, accounting, limits, and audits exist.</p></div></li></ol></section></div></section>
+    </main>
+  </div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

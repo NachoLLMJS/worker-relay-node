@@ -32,11 +32,17 @@ Test one cycle:
 npm run worker -- --once
 ```
 
-Run continuously:
+Run continuously with the local Worker Command Center:
 
 ```bash
-npm run worker
+npm run dashboard
 ```
+
+The command opens `http://127.0.0.1:4317` automatically. The Hermes-inspired local dashboard shows coordinator connectivity, live worker events, enabled models, completed jobs, and controls for starting/stopping polling or accepting anonymous public requests. It binds to loopback only and never sends provider credentials to the browser.
+
+For a headless VPS or terminal-only process, use `npm run worker` instead.
+
+The Identity page reserves the future wallet/worker-verification flow, but wallet connection, payments, token fees, and rewards remain disabled until contracts and accounting are deployed and audited.
 
 ## Supported services
 

@@ -37,6 +37,8 @@ npm run build
 npm run worker -- --once
 ```
 
+The Hermes-inspired dashboard is intended for a local PC. On a VPS, keep the headless worker shown below. If an operator deliberately runs the dashboard, it remains bound to `127.0.0.1`; access it only through an SSH tunnel and never expose port 4317 publicly.
+
 ## systemd
 
 As root, create `/etc/systemd/system/worker-relay.service`:
@@ -51,7 +53,7 @@ Wants=network-online.target
 Type=simple
 User=workerrelay
 WorkingDirectory=/home/workerrelay/worker-relay-node
-ExecStart=/usr/bin/npm run start
+ExecStart=/usr/bin/npm run start:worker
 Restart=on-failure
 RestartSec=10
 NoNewPrivileges=true

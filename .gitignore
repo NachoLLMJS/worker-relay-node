@@ -4,4 +4,5 @@ dist/
 .env.*
 !.env.example
 *.log
+.worker-data/
 .DS_Store

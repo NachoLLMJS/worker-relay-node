@@ -5,9 +5,11 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "dev": "tsx src/worker-cli.ts",
+    "dev": "tsx src/dashboard-cli.ts",
+    "dashboard": "tsx src/dashboard-cli.ts",
     "worker": "tsx src/worker-cli.ts",
-    "start": "node dist/src/worker-cli.js",
+    "start": "node dist/src/dashboard-cli.js",
+    "start:worker": "node dist/src/worker-cli.js",
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"

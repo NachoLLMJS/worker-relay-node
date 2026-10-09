@@ -40,13 +40,15 @@ npm run build
 npm run worker -- --once
 ```
 
-Run continuously in the foreground first:
+Run continuously in the foreground with the local Worker Command Center:
 
 ```powershell
-npm run worker
+npm run dashboard
 ```
 
-After it remains stable, create a Windows Task Scheduler task under the dedicated standard account. Configure it to start at login, use the repository as `Start in`, run `npm.cmd run worker`, and choose `Do not start a new instance` if one is already running. Do not embed credentials in the scheduled command; the worker reads the ignored `.env` file.
+The dashboard opens automatically at `http://127.0.0.1:4317`. It remains local to the PC and shows coordinator connectivity, enabled models, the live process feed, and completed jobs. Use its controls to start or stop polling and to opt in or out of anonymous public requests.
+
+After it remains stable, create a Windows Task Scheduler task under the dedicated standard account. Configure it to start at login, use the repository as `Start in`, run `npm.cmd run dashboard`, and choose `Do not start a new instance` if one is already running. Do not embed credentials in the scheduled command; the worker reads the ignored `.env` file.
 
 ## Updating
 
