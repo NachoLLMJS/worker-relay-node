@@ -1,4 +1,5 @@
 import { generateWithAnthropic } from "./anthropic-adapter.js";
+import { generateWithDeepSeek } from "./deepseek-adapter.js";
 import { generateWithHiggsfield } from "./higgsfield-adapter.js";
 import { generateWithOllama } from "./ollama-adapter.js";
 import { generateWithOpenAI } from "./openai-adapter.js";
@@ -41,6 +42,7 @@ export function buildWorkerExecutor(env: Env = process.env) {
     const service = requireService(capability);
     if (service.executor === "openai") required(env, "OPENAI_API_KEY");
     if (service.executor === "anthropic") required(env, "ANTHROPIC_API_KEY");
+    if (service.executor === "deepseek") required(env, "DEEPSEEK_API_KEY");
     if (service.executor === "higgsfield") {
       if (env.HIGGSFIELD_ENABLED?.trim().toLowerCase() !== "true") {
         throw new Error("HIGGSFIELD_ENABLED=true is required for Higgsfield capabilities");
@@ -72,6 +74,13 @@ export function buildWorkerExecutor(env: Env = process.env) {
           apiKey: required(env, "ANTHROPIC_API_KEY"),
           model: (service.configurableModel && env[service.configurableModel]?.trim()) || service.modelId!,
           baseUrl: env.ANTHROPIC_BASE_URL?.trim(),
+          prompt: job.prompt
+        });
+      case "deepseek":
+        return generateWithDeepSeek({
+          apiKey: required(env, "DEEPSEEK_API_KEY"),
+          model: (service.configurableModel && env[service.configurableModel]?.trim()) || service.modelId!,
+          baseUrl: env.DEEPSEEK_BASE_URL?.trim(),
           prompt: job.prompt
         });
       case "higgsfield": {

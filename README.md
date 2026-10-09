@@ -44,6 +44,8 @@ Text and chat:
 - `text.openai.chatgpt` — ChatGPT through OpenAI Responses API.
 - `text.openai.sol` — OpenAI Sol.
 - `text.anthropic.fable` — Claude Fable through Anthropic Messages API.
+- `text.deepseek.flash` — DeepSeek Flash through the official DeepSeek Chat API.
+- `text.deepseek.v4-pro` — DeepSeek V4 Pro through the official DeepSeek Chat API.
 
 Images:
 
@@ -61,10 +63,10 @@ Video through Higgsfield:
 Example capability list:
 
 ```text
-WORKER_CAPABILITIES=text.ollama,text.openai.sol,text.anthropic.fable,video.higgsfield.seedance-2.5
+WORKER_CAPABILITIES=text.ollama,text.openai.sol,text.anthropic.fable,text.deepseek.flash,video.higgsfield.seedance-2.5
 ```
 
-The node never enables a hosted provider automatically. Every capability must be explicitly listed. Hosted OpenAI, Anthropic, and Higgsfield jobs can consume the worker owner's account credits even though the private beta does not charge requesters.
+The node never enables a hosted provider automatically. Every capability must be explicitly listed. Hosted OpenAI, Anthropic, DeepSeek, and Higgsfield jobs can consume the worker owner's account credits even though the private beta does not charge requesters.
 
 ## Provider setup
 
@@ -85,6 +87,10 @@ Set `OPENAI_API_KEY` in `.env`. The defaults can be overridden with `OPENAI_CHAT
 ### Anthropic
 
 Set `ANTHROPIC_API_KEY` in `.env`. Override Fable with `ANTHROPIC_FABLE_MODEL` only when the current account uses a different exact model ID.
+
+### DeepSeek
+
+Set `DEEPSEEK_API_KEY` in `.env`. The worker uses the official `https://api.deepseek.com/chat/completions` endpoint. Enable `text.deepseek.flash` or `text.deepseek.v4-pro`; their defaults can be overridden with `DEEPSEEK_FLASH_MODEL` and `DEEPSEEK_PRO_MODEL` when DeepSeek publishes a new exact invocation ID.
 
 ### Higgsfield
 

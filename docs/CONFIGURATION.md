@@ -34,6 +34,15 @@ Capabilities: `text.openai.chatgpt`, `text.openai.sol`, `image.openai.gpt-image-
 
 Capability: `text.anthropic.fable`.
 
+## DeepSeek
+
+- `DEEPSEEK_API_KEY` — required for any enabled DeepSeek capability.
+- `DEEPSEEK_BASE_URL` — optional; default `https://api.deepseek.com`.
+- `DEEPSEEK_FLASH_MODEL` — default `deepseek-flash`.
+- `DEEPSEEK_PRO_MODEL` — default `deepseek-v4-pro`.
+
+Capabilities: `text.deepseek.flash`, `text.deepseek.v4-pro`.
+
 ## Higgsfield
 
 - `HIGGSFIELD_ENABLED` — must be exactly `true` before any Higgsfield capability starts.
@@ -66,7 +75,7 @@ WORKER_CAPABILITIES=text.ollama
 Hosted text:
 
 ```text
-WORKER_CAPABILITIES=text.openai.chatgpt,text.openai.sol,text.anthropic.fable
+WORKER_CAPABILITIES=text.openai.chatgpt,text.openai.sol,text.anthropic.fable,text.deepseek.flash,text.deepseek.v4-pro
 ```
 
 Image and video:

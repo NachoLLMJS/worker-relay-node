@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { generateWithAnthropic } from "../src/anthropic-adapter.js";
+import { generateWithDeepSeek } from "../src/deepseek-adapter.js";
 import { generateWithHiggsfield } from "../src/higgsfield-adapter.js";
 import { generateWithOpenAI } from "../src/openai-adapter.js";
 import { buildWorkerExecutor } from "../src/provider-registry.js";
@@ -31,6 +32,16 @@ describe("hosted text adapters", () => {
     });
     await expect(generateWithAnthropic({ apiKey: "anthropic-key", model: "claude-fable-4-6", prompt: "dialogue", fetcher })).resolves.toBe("Fable result");
   });
+
+  it("calls DeepSeek Chat Completions and returns model text", async () => {
+    const fetcher = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+      expect(String(input)).toBe("https://api.deepseek.com/chat/completions");
+      expect(init?.headers).toMatchObject({ authorization: "Bearer deepseek-key" });
+      expect(JSON.parse(String(init?.body))).toEqual({ model: "deepseek-v4-pro", messages: [{ role: "user", content: "hello" }], stream: false });
+      return new Response(JSON.stringify({ choices: [{ message: { content: "Hello from DeepSeek" } }] }), { status: 200 });
+    });
+    await expect(generateWithDeepSeek({ apiKey: "deepseek-key", model: "deepseek-v4-pro", prompt: "hello", fetcher })).resolves.toBe("Hello from DeepSeek");
+  });
 });
 
 describe("Higgsfield adapter", () => {
@@ -46,13 +57,15 @@ describe("Higgsfield adapter", () => {
 describe("worker provider registry", () => {
   it("requires explicit capabilities and fails closed when a hosted credential is missing", () => {
     expect(() => buildWorkerExecutor({ WORKER_CAPABILITIES: "text.openai.sol" })).toThrow("OPENAI_API_KEY is required");
+    expect(() => buildWorkerExecutor({ WORKER_CAPABILITIES: "text.deepseek.flash" })).toThrow("DEEPSEEK_API_KEY is required");
   });
 
   it("builds only the explicitly approved worker capabilities", () => {
     const worker = buildWorkerExecutor({
-      WORKER_CAPABILITIES: "text.ollama,text.anthropic.fable",
-      ANTHROPIC_API_KEY: "configured"
+      WORKER_CAPABILITIES: "text.ollama,text.anthropic.fable,text.deepseek.v4-pro",
+      ANTHROPIC_API_KEY: "configured",
+      DEEPSEEK_API_KEY: "configured"
     });
-    expect(worker.capabilities).toEqual(["text.ollama", "text.anthropic.fable"]);
+    expect(worker.capabilities).toEqual(["text.ollama", "text.anthropic.fable", "text.deepseek.v4-pro"]);
   });
 });

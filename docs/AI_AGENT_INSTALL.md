@@ -29,6 +29,7 @@ https://api-production-cc9f.up.railway.app
    - Ollama: install it, pull the approved model, and verify its local API.
    - OpenAI: add the credential locally and never echo it.
    - Anthropic: add the credential locally and never echo it.
+   - DeepSeek: add `DEEPSEEK_API_KEY` locally, select only `text.deepseek.flash` and/or `text.deepseek.v4-pro`, and never echo the credential.
    - Higgsfield: install the official CLI, authenticate interactively, verify `higgsfield account status`, and set `HIGGSFIELD_ENABLED=true`.
 8. Run `npm test`, `npm run typecheck`, `npm run build`, and `npm audit`.
 9. Run exactly one coordinator cycle with `npm run worker -- --once`.

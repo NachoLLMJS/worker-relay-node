@@ -4,9 +4,9 @@ export interface ServiceDefinition {
   id: string;
   label: string;
   kind: ServiceKind;
-  provider: "Local" | "OpenAI" | "Anthropic" | "Higgsfield";
+  provider: "Local" | "OpenAI" | "Anthropic" | "DeepSeek" | "Higgsfield";
   description: string;
-  executor: "ollama" | "openai" | "anthropic" | "higgsfield";
+  executor: "ollama" | "openai" | "anthropic" | "deepseek" | "higgsfield";
   modelId?: string;
   configurableModel?: string;
 }
@@ -50,6 +50,26 @@ const services = [
     executor: "anthropic",
     modelId: "claude-fable-4-6",
     configurableModel: "ANTHROPIC_FABLE_MODEL"
+  },
+  {
+    id: "text.deepseek.flash",
+    label: "DeepSeek Flash",
+    kind: "text",
+    provider: "DeepSeek",
+    description: "Fast hosted text and agent tasks through the official DeepSeek API.",
+    executor: "deepseek",
+    modelId: "deepseek-flash",
+    configurableModel: "DEEPSEEK_FLASH_MODEL"
+  },
+  {
+    id: "text.deepseek.v4-pro",
+    label: "DeepSeek V4 Pro",
+    kind: "text",
+    provider: "DeepSeek",
+    description: "Higher-capability hosted reasoning through the official DeepSeek API.",
+    executor: "deepseek",
+    modelId: "deepseek-v4-pro",
+    configurableModel: "DEEPSEEK_PRO_MODEL"
   },
   {
     id: "image.openai.gpt-image-2",

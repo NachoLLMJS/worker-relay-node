@@ -21,7 +21,7 @@ This repository is for a private, invite-only Worker Relay beta. Report vulnerab
 3. Set restrictive permissions on `.env`.
 4. Never commit or share `.env`.
 5. Enable only explicit capabilities.
-6. Treat OpenAI, Anthropic, and Higgsfield capabilities as potentially billable.
+6. Treat OpenAI, Anthropic, DeepSeek, and Higgsfield capabilities as potentially billable.
 7. Configure provider-side budgets, alerts, and rate limits before continuous operation.
 8. Test one job with `--once` before enabling a background service.
 9. Stop immediately if the coordinator origin or TLS identity changes unexpectedly.
