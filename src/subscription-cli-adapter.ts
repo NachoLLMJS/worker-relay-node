@@ -101,7 +101,9 @@ export function resolveSubscriptionCliInvocation(
 
 function subscriptionCliErrorKind(diagnosticValue: string): string {
   const diagnostic = diagnosticValue.toLowerCase();
-  return /rate.?limit|quota|\b429\b/.test(diagnostic) ? "rate_limited"
+  return /rate.?limit|quota|\b429\b|usage[_ -]?limit/.test(diagnostic) ? "rate_limited"
+    : /at capacity|capacity unavailable|overloaded|high demand/.test(diagnostic) ? "capacity_unavailable"
+    : /blocked by (?:our )?safety|safety system|content policy|policy violation/.test(diagnostic) ? "safety_blocked"
     : /unauthorized|authentication|not logged|log.?in|\b401\b|\b403\b/.test(diagnostic) ? "authentication_failed"
     : /model[^\n]*(?:unavailable|not found|unsupported)|unknown model/.test(diagnostic) ? "model_unavailable"
     : /permission denied|eacces|sandbox/.test(diagnostic) ? "permission_denied"
@@ -123,10 +125,12 @@ export function subscriptionCliFailureMessage(
     try {
       const event = JSON.parse(line) as {
         type?: string;
+        message?: string;
         error?: string | { message?: string };
         item?: { type?: string; message?: string };
       };
       const eventError = typeof event.error === "string" ? event.error : event.error?.message;
+      if (event.type === "error" && (event.message || eventError)) codexError = event.message || eventError || "";
       if (event.type === "turn.failed" && eventError) codexError = eventError;
       if (event.type === "item.completed" && event.item?.type === "error" && event.item.message) codexError = event.item.message;
     } catch {}
@@ -213,10 +217,14 @@ function parseCodexOutput(stdout: string): string {
     if (!event || typeof event !== "object") continue;
     const record = event as {
       type?: string;
+      message?: string;
       error?: string | { message?: string };
       item?: { type?: string; text?: string; message?: string };
     };
     const eventError = typeof record.error === "string" ? record.error : record.error?.message;
+    if (record.type === "error") {
+      throw new Error(`Codex failed: kind=${subscriptionCliErrorKind(record.message || eventError || "")}`);
+    }
     if (record.type === "turn.failed") {
       throw new Error(`Codex failed: kind=${subscriptionCliErrorKind(eventError || "")}`);
     }

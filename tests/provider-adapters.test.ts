@@ -96,6 +96,25 @@ describe("subscription CLI adapters", () => {
     expect(message.length).toBeLessThanOrEqual(500);
   });
 
+  it("classifies common Codex capacity and safety failures without exposing their text", () => {
+    const capacity = subscriptionCliFailureMessage(1, null,
+      '{"type":"turn.failed","error":{"message":"Selected model is at capacity"}}', "");
+    const safety = subscriptionCliFailureMessage(1, null,
+      '{"type":"error","error":{"message":"This request was blocked by our safety systems"}}', "");
+    expect(capacity).toContain("kind=capacity_unavailable");
+    expect(safety).toContain("kind=safety_blocked");
+    expect(capacity).not.toContain("Selected model");
+    expect(safety).not.toContain("blocked by");
+  });
+
+  it("sanitizes top-level Codex error events even when the CLI exits successfully", async () => {
+    const privatePrompt = "private top-level prompt";
+    const runner = vi.fn(async () =>
+      `{"type":"error","message":"Selected model is at capacity: ${privatePrompt}"}\n`);
+    await expect(generateWithCodexSubscription({ prompt: privatePrompt, runner }))
+      .rejects.toThrow("Codex failed: kind=capacity_unavailable");
+  });
+
   it("sanitizes Codex error events even when the CLI exits successfully", async () => {
     const privatePrompt = "private prompt must never appear";
     const runner = vi.fn(async () =>
