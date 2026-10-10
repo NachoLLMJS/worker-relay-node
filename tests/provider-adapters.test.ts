@@ -4,7 +4,7 @@ import { generateWithDeepSeek } from "../src/deepseek-adapter.js";
 import { generateWithHiggsfield } from "../src/higgsfield-adapter.js";
 import { generateWithOpenAI } from "../src/openai-adapter.js";
 import { buildWorkerExecutor } from "../src/provider-registry.js";
-import { generateWithCodexSubscription, subscriptionCliIsLoggedIn } from "../src/subscription-cli-adapter.js";
+import { generateWithCodexSubscription, resolveSubscriptionCliInvocation, subscriptionCliIsLoggedIn } from "../src/subscription-cli-adapter.js";
 
 describe("hosted text adapters", () => {
   it("calls the OpenAI Responses API and returns output text", async () => {
@@ -58,6 +58,30 @@ describe("Higgsfield adapter", () => {
 describe("subscription CLI adapters", () => {
   it("accepts Codex login status when the CLI writes it to stderr", () => {
     expect(subscriptionCliIsLoggedIn("codex", "", "Logged in using ChatGPT\n")).toBe(true);
+  });
+
+  it("resolves the Windows npm Codex shim to its JavaScript launcher without a shell", () => {
+    const pathDirectory = "C:\\Users\\worker\\AppData\\Roaming\\npm";
+    const invocation = resolveSubscriptionCliInvocation("codex", {
+      PATH: pathDirectory,
+      PATHEXT: ".COM;.EXE;.BAT;.CMD"
+    }, "win32", (path) => path === `${pathDirectory}\\codex.cmd` || path === `${pathDirectory}\\node_modules\\@openai\\codex\\bin\\codex.js`);
+
+    expect(invocation).toEqual({
+      command: process.execPath,
+      argsPrefix: [`${pathDirectory}\\node_modules\\@openai\\codex\\bin\\codex.js`]
+    });
+  });
+
+  it("resolves an explicit current-directory Windows Codex shim without searching PATH", () => {
+    const invocation = resolveSubscriptionCliInvocation(".\\codex.cmd", {
+      PATH: "C:\\unrelated"
+    }, "win32", (path) => path === ".\\codex.cmd" || path === "node_modules\\@openai\\codex\\bin\\codex.js");
+
+    expect(invocation).toEqual({
+      command: process.execPath,
+      argsPrefix: ["node_modules\\@openai\\codex\\bin\\codex.js"]
+    });
   });
 
   it("runs Codex in an ephemeral text-only sandbox and parses its final message", async () => {

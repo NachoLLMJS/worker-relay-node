@@ -1,7 +1,8 @@
 import { spawn, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, win32 } from "node:path";
 
 export type CliRunInput = {
   command: string;
@@ -15,6 +16,7 @@ export type CliRunInput = {
 export type CliRunner = (input: CliRunInput) => Promise<string>;
 export type SubscriptionCli = "codex";
 export type SubscriptionProbe = (kind: SubscriptionCli, command: string, env: NodeJS.ProcessEnv) => void;
+type CliInvocation = { command: string; argsPrefix: string[] };
 
 const ENV_ALLOWLIST = [
   "PATH", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "SYSTEMROOT", "SystemRoot",
@@ -31,8 +33,35 @@ export function subscriptionCliEnvironment(source: NodeJS.ProcessEnv = process.e
   return safe;
 }
 
+export function resolveSubscriptionCliInvocation(
+  command: string,
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+  pathExists: (path: string) => boolean = existsSync
+): CliInvocation {
+  if (platform !== "win32") return { command, argsPrefix: [] };
+
+  const hasDirectory = win32.dirname(command) !== "." || /[\\/]/.test(command);
+  const bases = hasDirectory
+    ? [command]
+    : String(env.PATH || "").split(";").filter(Boolean).map((directory) => win32.join(directory, command));
+
+  for (const base of bases) {
+    const executable = /\.(?:exe|com)$/i.test(base) ? base : `${base}.exe`;
+    if (pathExists(executable)) return { command: executable, argsPrefix: [] };
+
+    const shim = /\.cmd$/i.test(base) ? base : `${base}.cmd`;
+    if (!pathExists(shim)) continue;
+    const launcher = win32.join(win32.dirname(shim), "node_modules", "@openai", "codex", "bin", "codex.js");
+    if (pathExists(launcher)) return { command: process.execPath, argsPrefix: [launcher] };
+  }
+
+  return { command, argsPrefix: [] };
+}
+
 const defaultRunner: CliRunner = (input) => new Promise((resolve, reject) => {
-  const child = spawn(input.command, input.args, {
+  const invocation = resolveSubscriptionCliInvocation(input.command, input.env);
+  const child = spawn(invocation.command, [...invocation.argsPrefix, ...input.args], {
     cwd: input.cwd,
     env: input.env,
     shell: false,
@@ -156,7 +185,8 @@ export function subscriptionCliIsLoggedIn(kind: SubscriptionCli, stdout: string,
 
 export const assertSubscriptionCliReady: SubscriptionProbe = (kind, command, sourceEnv) => {
   const env = subscriptionCliEnvironment(sourceEnv);
-  const result = spawnSync(command, ["login", "status"], { env, shell: false, windowsHide: true, encoding: "utf8", timeout: 30_000 });
+  const invocation = resolveSubscriptionCliInvocation(command, env);
+  const result = spawnSync(invocation.command, [...invocation.argsPrefix, "login", "status"], { env, shell: false, windowsHide: true, encoding: "utf8", timeout: 30_000 });
   if (result.error) throw new Error(`${kind} CLI is unavailable: ${result.error.message}`);
   const stdout = String(result.stdout || "");
   const stderr = String(result.stderr || "");
