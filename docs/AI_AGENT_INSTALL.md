@@ -21,21 +21,22 @@ https://api-production-cc9f.up.railway.app
 
 1. Verify Node.js 22 or newer and Git are installed.
 2. Clone `https://github.com/NachoLLMJS/worker-relay-node.git`.
-3. Run `npm ci`.
-4. Copy `.env.example` to `.env` without deleting the template.
-5. Ensure `.env` remains ignored by Git.
-6. Put the coordinator URL, worker name, worker access credential, and exact approved capabilities in `.env`.
-7. Configure only the selected provider:
+3. Run `npm ci`; if the current npm/platform rejects optional cross-platform packages, run `npm install --no-package-lock` as the fallback and report that fallback.
+4. Start the local dashboard with `npm run dashboard`.
+5. The dashboard creates `.env` from `.env.example` if missing and opens `http://127.0.0.1:4317`.
+6. Direct the human operator to the Configuration page for the few values that cannot be invented: worker token, worker name, approved capabilities, and provider credentials. Do not ask repeated chat questions when the dashboard can collect the value locally.
+7. The operator can enable/disable capabilities, save API keys/model overrides, toggle Codex subscription mode, and start/stop the worker from the dashboard.
+8. Configure only selected providers:
    - Ollama: install it, pull the approved model, and verify its local API.
-   - OpenAI: add the credential locally and never echo it.
+   - OpenAI: add the credential in the dashboard or `.env`; never echo it.
    - Anthropic: add `ANTHROPIC_API_KEY` locally and never echo it. Do not configure a Claude consumer subscription or Claude Code login as a worker credential.
    - Codex subscription: install the official Codex CLI, have the human complete `codex login`, verify `codex login status`, and enable only `text.openai.codex`.
    - DeepSeek: add `DEEPSEEK_API_KEY` locally, select only `text.deepseek.flash` and/or `text.deepseek.v4-pro`, and never echo the credential.
    - Higgsfield: install the official CLI, authenticate interactively, verify `higgsfield account status`, and set `HIGGSFIELD_ENABLED=true`.
-8. Run `npm test`, `npm run typecheck`, `npm run build`, and `npm audit`.
-9. Run exactly one coordinator cycle with `npm run worker -- --once`.
-10. Report only sanitized status: installed/not installed, tests passed/failed, capability IDs, and whether the one-cycle result was idle or completed.
-11. Enable continuous operation only after the one-cycle test succeeds.
+9. Run `npm test`, `npm run typecheck`, `npm run build`, and `npm audit`.
+10. Run exactly one coordinator cycle with `npm run worker -- --once` after the token is saved.
+11. Report only sanitized status: installed/not installed, tests passed/failed, capability IDs, and whether the one-cycle result was idle or completed.
+12. Enable continuous operation with the dashboard Start worker control only after the one-cycle test succeeds, unless the operator explicitly wants dashboard-managed startup first.
 
 ## Fail-closed rules
 

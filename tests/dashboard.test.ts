@@ -1,8 +1,10 @@
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { describe, expect, it, vi } from "vitest";
 import { WorkerRuntime } from "../src/worker-runtime.js";
 import { buildDashboardServer } from "../src/dashboard-server.js";
+import { createDashboardConfigStore } from "../src/config-store.js";
 
 const root = join(import.meta.dirname, "..");
 
@@ -77,6 +79,64 @@ describe("local dashboard server", () => {
       runtime.stop();
     } finally {
       await server.close();
+    }
+  });
+
+  it("lets the dashboard save local configuration while redacting credential values", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "worker-relay-config-"));
+    const envFile = join(dir, ".env");
+    await writeFile(envFile, "COORDINATOR_URL=https://api-production-cc9f.up.railway.app\nWORKER_ACCESS_TOKEN=\nWORKER_NAME=friend-worker-1\nWORKER_CAPABILITIES=text.ollama\nACCEPT_PUBLIC_REQUESTS=false\nSUBSCRIPTION_CLI_ENABLED=false\nCODEX_COMMAND=codex\nOPENAI_API_KEY=\n", "utf8");
+    const runtime = new WorkerRuntime({
+      workerId: "friend-worker-1",
+      configuredCapabilities: ["text.ollama"],
+      initialCapabilities: ["text.ollama"],
+      acceptPublicRequests: false,
+      cycle: async () => "idle"
+    });
+    const store = createDashboardConfigStore(envFile, { ...process.env });
+    const server = await buildDashboardServer({
+      runtime,
+      publicDir: join(root, "public"),
+      configStore: store,
+      onConfigSaved: (summary) => {
+        runtime.reconfigure({
+          workerId: summary.workerName,
+          configuredCapabilities: summary.workerCapabilities,
+          activeCapabilities: summary.workerCapabilities,
+          acceptPublicRequests: summary.acceptPublicRequests
+        });
+      }
+    });
+    const address = await server.listen(0, "127.0.0.1");
+    try {
+      const saved = await fetch(`${address}/api/config`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-dashboard-token": server.token },
+        body: JSON.stringify({
+          workerAccessToken: "secret-worker-token-1234567890",
+          workerName: "nacho-wsl-worker",
+          workerCapabilities: ["text.openai.codex"],
+          subscriptionCliEnabled: true,
+          codexCommand: "/home/nachete/.hermes/node/bin/codex",
+          codexModel: "gpt-5.1-codex",
+          openaiApiKey: "sk-test-secret",
+          acceptPublicRequests: true
+        })
+      }).then((response) => response.json());
+
+      expect(saved.workerAccessTokenSet).toBe(true);
+      expect(saved.openaiApiKeySet).toBe(true);
+      expect(JSON.stringify(saved)).not.toContain("secret-worker-token");
+      expect(JSON.stringify(saved)).not.toContain("sk-test-secret");
+      expect(runtime.snapshot()).toMatchObject({ workerId: "nacho-wsl-worker", acceptPublicRequests: true });
+      expect(runtime.snapshot().activeCapabilities).toEqual(["text.openai.codex"]);
+      const written = await readFile(envFile, "utf8");
+      expect(written).toContain("WORKER_ACCESS_TOKEN=secret-worker-token-1234567890");
+      expect(written).toContain("WORKER_CAPABILITIES=text.openai.codex");
+      expect(written).toContain("SUBSCRIPTION_CLI_ENABLED=true");
+    } finally {
+      await server.close();
+      await rm(dir, { recursive: true, force: true });
     }
   });
 

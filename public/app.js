@@ -1,11 +1,12 @@
 let dashboardToken = "";
 let snapshot = null;
+let config = null;
 let visualLogFloor = 0;
 let poller;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
-const titles = { overview: "Overview", terminal: "Terminal", models: "Models", jobs: "Jobs", identity: "Identity" };
+const titles = { overview: "Overview", terminal: "Terminal", models: "Models", config: "Configuration", jobs: "Jobs", identity: "Identity" };
 
 function setText(node, value) { if (node) node.textContent = value ?? ""; }
 function shortId(value) { return value ? `#${value.slice(0, 8).toUpperCase()}` : "—"; }
@@ -52,6 +53,8 @@ function renderTerminal(target, limit) {
 }
 
 function providerName(id) {
+  const service = (config?.services || []).find((item) => item.id === id);
+  if (service) return service.provider;
   if (id.includes("openai")) return "OpenAI";
   if (id.includes("anthropic")) return "Anthropic";
   if (id.includes("deepseek")) return "DeepSeek";
@@ -60,17 +63,24 @@ function providerName(id) {
 }
 
 function modelName(id) {
+  const service = (config?.services || []).find((item) => item.id === id);
+  if (service) return service.label;
   return id.split(".").slice(2).join(" ").replace(/-/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()) || "Ollama";
 }
 
+function serviceDescription(id) {
+  return (config?.services || []).find((item) => item.id === id)?.description || `${providerName(id)} capability`;
+}
+
 function renderModels() {
-  const cards = (snapshot.configuredCapabilities || []).map((id) => {
+  const catalog = (config?.services || snapshot.configuredCapabilities.map((id) => ({ id }))).map((item) => item.id);
+  const cards = catalog.map((id) => {
     const active = snapshot.activeCapabilities.includes(id);
     const card = document.createElement("article"); card.className = `model-card${active ? " active" : ""}`;
     const header = document.createElement("header");
     const identity = document.createElement("div");
     const title = document.createElement("h3"); const description = document.createElement("p");
-    setText(title, modelName(id)); setText(description, `${providerName(id)} capability validated at startup`); identity.append(title, description);
+    setText(title, modelName(id)); setText(description, serviceDescription(id)); identity.append(title, description);
     const mark = document.createElement("span"); mark.className = "model-provider"; setText(mark, providerName(id).slice(0, 2).toUpperCase());
     header.append(identity, mark);
     const code = document.createElement("code"); setText(code, id);
@@ -111,6 +121,67 @@ function renderJobs() {
   $("#jobs-table").hidden = rows.length === 0;
 }
 
+function setInput(id, value) { const node = $(id); if (node) node.value = value ?? ""; }
+function setChecked(id, value) { const node = $(id); if (node) node.checked = Boolean(value); }
+function inputValue(id) { return $(id)?.value?.trim() || ""; }
+
+function renderConfig() {
+  if (!config) return;
+  setInput("#cfg-worker-name", config.workerName);
+  setInput("#cfg-coordinator-url", config.coordinatorUrl);
+  setInput("#cfg-codex-command", config.codexCommand);
+  setInput("#cfg-codex-model", config.codexModel);
+  setInput("#cfg-ollama-model", config.ollamaModel);
+  setInput("#cfg-openai-chatgpt-model", config.openaiChatgptModel);
+  setInput("#cfg-openai-sol-model", config.openaiSolModel);
+  setInput("#cfg-openai-image-model", config.openaiImageModel);
+  setInput("#cfg-anthropic-model", config.anthropicFableModel);
+  setInput("#cfg-deepseek-base-url", config.deepseekBaseUrl);
+  setInput("#cfg-deepseek-flash-model", config.deepseekFlashModel);
+  setInput("#cfg-deepseek-pro-model", config.deepseekProModel);
+  setInput("#cfg-higgsfield-command", config.higgsfieldCommand);
+  setInput("#cfg-higgsfield-genjutsu", config.higgsfieldGenjutsuModelId);
+  setChecked("#cfg-subscription-enabled", config.subscriptionCliEnabled);
+  setChecked("#cfg-higgsfield-enabled", config.higgsfieldEnabled);
+  const secrets = [config.workerAccessTokenSet ? "worker token saved" : "worker token missing", config.openaiApiKeySet ? "OpenAI key saved" : "OpenAI key missing", config.anthropicApiKeySet ? "Anthropic key saved" : "Anthropic key missing", config.deepseekApiKeySet ? "DeepSeek key saved" : "DeepSeek key missing"];
+  setText($("#config-message"), secrets.join(" · "));
+}
+
+async function saveConfig() {
+  const body = {
+    workerName: inputValue("#cfg-worker-name"),
+    coordinatorUrl: inputValue("#cfg-coordinator-url"),
+    workerCapabilities: $$('#models-grid input[type="checkbox"]:checked').map((input) => input.dataset.capability),
+    acceptPublicRequests: $("#public-jobs-toggle").checked,
+    subscriptionCliEnabled: $("#cfg-subscription-enabled").checked,
+    codexCommand: inputValue("#cfg-codex-command"),
+    codexModel: inputValue("#cfg-codex-model"),
+    ollamaModel: inputValue("#cfg-ollama-model"),
+    openaiChatgptModel: inputValue("#cfg-openai-chatgpt-model"),
+    openaiSolModel: inputValue("#cfg-openai-sol-model"),
+    openaiImageModel: inputValue("#cfg-openai-image-model"),
+    anthropicFableModel: inputValue("#cfg-anthropic-model"),
+    deepseekBaseUrl: inputValue("#cfg-deepseek-base-url"),
+    deepseekFlashModel: inputValue("#cfg-deepseek-flash-model"),
+    deepseekProModel: inputValue("#cfg-deepseek-pro-model"),
+    higgsfieldEnabled: $("#cfg-higgsfield-enabled").checked,
+    higgsfieldCommand: inputValue("#cfg-higgsfield-command"),
+    higgsfieldGenjutsuModelId: inputValue("#cfg-higgsfield-genjutsu")
+  };
+  const token = inputValue("#cfg-worker-token");
+  const openaiKey = inputValue("#cfg-openai-key");
+  const anthropicKey = inputValue("#cfg-anthropic-key");
+  const deepseekKey = inputValue("#cfg-deepseek-key");
+  if (token) body.workerAccessToken = token;
+  if (openaiKey) body.openaiApiKey = openaiKey;
+  if (anthropicKey) body.anthropicApiKey = anthropicKey;
+  if (deepseekKey) body.deepseekApiKey = deepseekKey;
+  config = await request("/api/config", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  ["#cfg-worker-token", "#cfg-openai-key", "#cfg-anthropic-key", "#cfg-deepseek-key"].forEach((id) => setInput(id, ""));
+  await refresh();
+  renderConfig();
+}
+
 function renderStatus() {
   if (!snapshot) return;
   setText($("#worker-id"), snapshot.workerId);
@@ -135,6 +206,7 @@ function renderStatus() {
   renderTerminal($("#overview-terminal"), 8);
   renderTerminal($("#terminal-feed"), 300);
   renderModels();
+  renderConfig();
   renderJobs();
 }
 
@@ -155,6 +227,7 @@ async function updateCapabilities(changed) {
 $$('[data-view]').forEach((button) => button.addEventListener("click", () => showView(button.dataset.view)));
 $$('[data-jump]').forEach((button) => button.addEventListener("click", () => showView(button.dataset.jump)));
 $("#worker-toggle").addEventListener("click", async () => { snapshot = await request(snapshot.running ? "/api/worker/stop" : "/api/worker/start", { method: "POST" }); renderStatus(); });
+$("#save-config").addEventListener("click", () => saveConfig().catch((error) => window.alert(error.message)));
 $("#public-jobs-toggle").addEventListener("change", async (event) => { snapshot = await request("/api/worker/public-requests", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: event.target.checked }) }); renderStatus(); });
 $("#models-grid").addEventListener("change", (event) => { if (event.target.matches('input[type="checkbox"]')) updateCapabilities(event.target); });
 $("#clear-terminal").addEventListener("click", () => { visualLogFloor = Math.max(0, ...(snapshot.logs || []).map((log) => log.id)); renderStatus(); });
@@ -162,6 +235,7 @@ window.addEventListener("hashchange", () => showView(location.hash.slice(1) || "
 
 (async () => {
   dashboardToken = (await request("/api/session")).token;
+  config = await request("/api/config").catch(() => null);
   await refresh();
   showView(titles[location.hash.slice(1)] ? location.hash.slice(1) : "overview");
   poller = setInterval(() => refresh().catch(() => {}), 1_000);

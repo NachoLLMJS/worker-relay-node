@@ -22,25 +22,23 @@ npm ci
 Copy-Item .env.example .env
 ```
 
-Open `.env`, paste the private `WORKER_ACCESS_TOKEN` supplied by the network operator, choose `WORKER_CAPABILITIES`, and add only the provider credentials needed by those capabilities.
-
-Anonymous public jobs are disabled by default. Set `ACCEPT_PUBLIC_REQUESTS=true` only if you deliberately want those jobs to consume the capabilities, subscriptions, API credits, and local compute enabled on this worker.
-
-Test one cycle:
-
-```bash
-npm run worker -- --once
-```
-
-Run continuously with the local Worker Command Center:
+For the easiest setup, run the local Worker Command Center first:
 
 ```bash
 npm run dashboard
 ```
 
-The command opens `http://127.0.0.1:4317` automatically. The Hermes-inspired local dashboard shows coordinator connectivity, live worker events, enabled models, completed jobs, and controls for starting/stopping polling or accepting anonymous public requests. It binds to loopback only and never sends provider credentials to the browser.
+The command creates `.env` from `.env.example` if needed and opens `http://127.0.0.1:4317` automatically. Use the Configuration page to paste the private `WORKER_ACCESS_TOKEN`, set `WORKER_NAME`, choose capabilities, save API keys/model IDs, enable Codex subscription mode, and start/stop polling. Secrets are written only to local `.env`; the dashboard reports only whether each secret is present and never renders secret values back to the browser.
 
-For a headless VPS or terminal-only process, use `npm run worker` instead.
+Anonymous public jobs are disabled by default. Enable `ACCEPT_PUBLIC_REQUESTS` only if you deliberately want those jobs to consume the capabilities, subscriptions, API credits, and local compute enabled on this worker.
+
+After saving configuration, test one cycle from the terminal if desired:
+
+```bash
+npm run worker -- --once
+```
+
+For a headless VPS or terminal-only process, edit `.env` directly and use `npm run worker` instead.
 
 The Identity page reserves the future wallet/worker-verification flow, but wallet connection, payments, token fees, and rewards remain disabled until contracts and accounting are deployed and audited.
 

@@ -55,14 +55,18 @@ export class WorkerRuntime {
   private logSequence = 0;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly now: () => Date;
+  private workerId: string;
+  private configuredCapabilities: string[];
 
   constructor(private readonly options: RuntimeOptions) {
+    this.workerId = options.workerId;
+    this.configuredCapabilities = [...new Set(options.configuredCapabilities)];
     this.activeCapabilities = [...new Set(options.initialCapabilities)];
     this.acceptPublicRequests = options.acceptPublicRequests;
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.now = options.now ?? (() => new Date());
     this.assertCapabilities(this.activeCapabilities);
-    this.log("info", `Worker ${options.workerId} dashboard ready`);
+    this.log("info", `Worker ${this.workerId} dashboard ready`);
   }
 
   start(): void {
@@ -93,14 +97,27 @@ export class WorkerRuntime {
     this.log("info", value ? "Anonymous public jobs enabled" : "Anonymous public jobs disabled");
   }
 
+  reconfigure(input: { workerId?: string; configuredCapabilities?: string[]; activeCapabilities?: string[]; acceptPublicRequests?: boolean }): void {
+    if (input.workerId) this.workerId = input.workerId;
+    if (input.configuredCapabilities) this.configuredCapabilities = [...new Set(input.configuredCapabilities)];
+    if (input.activeCapabilities) {
+      const unique = [...new Set(input.activeCapabilities)];
+      if (unique.length === 0) throw new Error("at least one capability must remain active");
+      this.assertCapabilities(unique);
+      this.activeCapabilities = unique;
+    }
+    if (typeof input.acceptPublicRequests === "boolean") this.acceptPublicRequests = input.acceptPublicRequests;
+    this.log("info", "Local worker configuration saved");
+  }
+
   snapshot() {
     return {
-      workerId: this.options.workerId,
+      workerId: this.workerId,
       running: this.desiredRunning || this.loopActive,
       connected: this.connected,
       busy: this.busy,
       acceptPublicRequests: this.acceptPublicRequests,
-      configuredCapabilities: [...this.options.configuredCapabilities],
+      configuredCapabilities: [...this.configuredCapabilities],
       activeCapabilities: [...this.activeCapabilities],
       completedJobs: this.completedJobs,
       failedCycles: this.failedCycles,
@@ -113,7 +130,7 @@ export class WorkerRuntime {
 
   private assertCapabilities(capabilities: string[]): void {
     for (const capability of capabilities) {
-      if (!this.options.configuredCapabilities.includes(capability)) {
+      if (!this.configuredCapabilities.includes(capability)) {
         throw new Error(`${capability}: capability was not validated at startup`);
       }
     }

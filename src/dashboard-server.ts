@@ -3,6 +3,12 @@ import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import type { WorkerRuntime } from "./worker-runtime.js";
+import type { DashboardConfigSummary, DashboardConfigUpdate } from "./config-store.js";
+
+type DashboardConfigStore = {
+  summary(): Promise<DashboardConfigSummary>;
+  save(update: DashboardConfigUpdate): Promise<DashboardConfigSummary>;
+};
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -32,7 +38,7 @@ function safeHost(request: IncomingMessage): boolean {
   return host === "127.0.0.1" || host === "localhost" || host === "::1";
 }
 
-export async function buildDashboardServer(options: { runtime: WorkerRuntime; publicDir: string }) {
+export async function buildDashboardServer(options: { runtime: WorkerRuntime; publicDir: string; configStore?: DashboardConfigStore; onConfigSaved?: (summary: DashboardConfigSummary) => void }) {
   const token = randomBytes(32).toString("base64url");
   const server = createServer(async (request, reply) => {
     reply.setHeader("x-content-type-options", "nosniff");
@@ -45,10 +51,20 @@ export async function buildDashboardServer(options: { runtime: WorkerRuntime; pu
 
     if (request.method === "GET" && url.pathname === "/api/session") return writeJson(reply, 200, { token });
     if (request.method === "GET" && url.pathname === "/api/status") return writeJson(reply, 200, options.runtime.snapshot());
+    if (request.method === "GET" && url.pathname === "/api/config") {
+      if (!options.configStore) return writeJson(reply, 404, { error: "not_found" });
+      return writeJson(reply, 200, await options.configStore.summary());
+    }
 
     if (request.method === "POST" && url.pathname.startsWith("/api/")) {
       if (request.headers["x-dashboard-token"] !== token) return writeJson(reply, 403, { error: "forbidden" });
       try {
+        if (url.pathname === "/api/config") {
+          if (!options.configStore) return writeJson(reply, 404, { error: "not_found" });
+          const summary = await options.configStore.save(await readJson(request) as DashboardConfigUpdate);
+          options.onConfigSaved?.(summary);
+          return writeJson(reply, 200, summary);
+        }
         if (url.pathname === "/api/worker/start") options.runtime.start();
         else if (url.pathname === "/api/worker/stop") options.runtime.stop();
         else if (url.pathname === "/api/worker/capabilities") {
