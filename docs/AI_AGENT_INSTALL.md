@@ -24,14 +24,14 @@ https://api-production-cc9f.up.railway.app
 3. Run `npm ci`; if the current npm/platform rejects optional cross-platform packages, run `npm install --no-package-lock` as the fallback and report that fallback.
 4. Start the local dashboard with `npm run dashboard`.
 5. The dashboard creates `.env` from `.env.example` if missing and opens `http://127.0.0.1:4317`.
-6. Direct the human operator to the Configuration page for the few values that cannot be invented: the assigned worker token, its matching worker ID as the exact worker name, approved capabilities, and provider credentials. Do not ask repeated chat questions when the dashboard can collect the value locally.
-7. The operator can enable/disable capabilities, save API keys/model overrides, toggle Codex subscription mode, and start/stop the worker from the dashboard.
+6. Direct the human operator to the Configuration page for the few values that cannot be invented: the assigned worker token, its matching worker ID as the exact worker name, provider credentials, and explicit Codex/Higgsfield spending opt-ins. Do not ask repeated chat questions when the dashboard can collect the value locally.
+7. The Models page is read-only. Saving configuration and starting the worker auto-detect ready capabilities and persist the generated compatibility list.
 8. Configure only selected providers:
    - Ollama: install it, pull the approved model, and verify its local API.
    - OpenAI: add the credential in the dashboard or `.env`; never echo it.
    - Anthropic: add `ANTHROPIC_API_KEY` locally and never echo it. Do not configure a Claude consumer subscription or Claude Code login as a worker credential.
-   - Codex subscription: install the official Codex CLI, have the human complete `codex login`, verify `codex login status`, and enable only `text.openai.codex`.
-   - DeepSeek: add `DEEPSEEK_API_KEY` locally, select only `text.deepseek.flash` and/or `text.deepseek.v4-pro`, and never echo the credential.
+   - Codex subscription: install the official Codex CLI, have the human complete `codex login`, verify `codex login status`, and set `SUBSCRIPTION_CLI_ENABLED=true` only with operator approval.
+   - DeepSeek: add `DEEPSEEK_API_KEY` locally and never echo the credential; both catalog services are detected automatically.
    - Higgsfield: install the official CLI, authenticate interactively, verify `higgsfield account status`, and set `HIGGSFIELD_ENABLED=true`.
 9. Run `npm test`, `npm run typecheck`, `npm run build`, and `npm audit`.
 10. Run exactly one coordinator cycle with `npm run worker -- --once` after the token is saved.
@@ -41,7 +41,7 @@ https://api-production-cc9f.up.railway.app
 ## Fail-closed rules
 
 - Never invent or normalize a capability ID, model ID, credential, coordinator URL, or worker name.
-- Never enable a capability not explicitly approved by the human.
+- Never configure a billable provider or subscription opt-in not explicitly approved by the human.
 - Never put a provider credential in a command argument, Git remote, issue, log, or response.
 - Never open an inbound firewall port for this worker.
 - Never run the worker as root or Administrator for continuous operation.
@@ -49,7 +49,7 @@ https://api-production-cc9f.up.railway.app
 - Never copy OAuth tokens, browser cookies, CLI credential files, or subscription sessions into `.env` or chat. The human authenticates directly with the official CLI.
 - Set `SUBSCRIPTION_CLI_ENABLED=true` only after the operator explicitly approves ChatGPT plan usage and Codex reports a valid local login.
 - Stop if TLS validation fails, the coordinator origin differs, provider authentication is rejected, or the repository has unexpected uncommitted executable changes.
-- Higgsfield generation can consume credits. Require explicit `HIGGSFIELD_ENABLED=true` plus explicit Higgsfield capability IDs.
+- Higgsfield generation can consume credits. Require explicit `HIGGSFIELD_ENABLED=true`; account readiness and service availability are then detected automatically.
 - For Genjutsu, discover the exact current model ID from the authenticated Higgsfield model list. Do not guess it.
 
 ## Verification output format

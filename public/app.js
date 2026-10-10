@@ -75,10 +75,11 @@ function serviceDescription(id) {
 }
 
 function renderModels() {
-  const catalog = (config?.services || snapshot.configuredCapabilities.map((id) => ({ id }))).map((item) => item.id);
-  const cards = catalog.map((id) => {
-    const active = snapshot.activeCapabilities.includes(id);
-    const card = document.createElement("article"); card.className = `model-card${active ? " active" : ""}`;
+  const catalog = config?.services || [];
+  const cards = catalog.map((service) => {
+    const id = service.id;
+    const available = service.state === "available";
+    const card = document.createElement("article"); card.className = `model-card${available ? " active" : ""}`;
     const header = document.createElement("header");
     const identity = document.createElement("div");
     const title = document.createElement("h3"); const description = document.createElement("p");
@@ -86,9 +87,9 @@ function renderModels() {
     const mark = document.createElement("span"); mark.className = "model-provider"; setText(mark, providerName(id).slice(0, 2).toUpperCase());
     header.append(identity, mark);
     const code = document.createElement("code"); setText(code, id);
-    const label = document.createElement("label"); const copy = document.createElement("span"); const checkbox = document.createElement("input");
-    checkbox.type = "checkbox"; checkbox.checked = active; checkbox.dataset.capability = id; setText(copy, active ? "Enabled for claims" : "Disabled for claims"); label.append(copy, checkbox);
-    card.append(header, code, label);
+    const status = document.createElement("div"); status.className = `status ${available ? "succeeded" : "failed"}`;
+    setText(status, available ? "Detected · available" : `Unavailable · ${service.reason}`);
+    card.append(header, code, status);
     return card;
   });
   $("#models-grid").replaceChildren(...cards);
@@ -178,7 +179,6 @@ async function saveConfig() {
   const body = {
     workerName: inputValue("#cfg-worker-name"),
     coordinatorUrl: inputValue("#cfg-coordinator-url"),
-    workerCapabilities: $$('#models-grid input[type="checkbox"]:checked').map((input) => input.dataset.capability),
     acceptPublicRequests: $("#public-jobs-toggle").checked,
     subscriptionCliEnabled: $("#cfg-subscription-enabled").checked,
     codexCommand: inputValue("#cfg-codex-command"),
@@ -241,14 +241,6 @@ async function refresh() {
   renderStatus();
 }
 
-async function updateCapabilities(changed) {
-  const selected = $$('#models-grid input[type="checkbox"]:checked').map((input) => input.dataset.capability);
-  if (!selected.length) { changed.checked = true; return; }
-  try {
-    config = await request("/api/config", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ workerCapabilities: selected }) });
-    await refresh();
-  } catch (error) { changed.checked = !changed.checked; window.alert(error.message); }
-}
 
 $$('[data-view]').forEach((button) => button.addEventListener("click", () => showView(button.dataset.view)));
 $$('[data-jump]').forEach((button) => button.addEventListener("click", () => showView(button.dataset.jump)));
@@ -256,7 +248,7 @@ $("#worker-toggle").addEventListener("click", async () => { snapshot = await req
 $("#save-config").addEventListener("click", () => saveConfig().catch((error) => window.alert(error.message)));
 $("#codex-login").addEventListener("click", () => startCodexLogin().catch((error) => window.alert(error.message)));
 $("#public-jobs-toggle").addEventListener("change", async (event) => { config = await request("/api/config", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ acceptPublicRequests: event.target.checked }) }); await refresh(); });
-$("#models-grid").addEventListener("change", (event) => { if (event.target.matches('input[type="checkbox"]')) updateCapabilities(event.target); });
+
 $("#clear-terminal").addEventListener("click", () => { visualLogFloor = Math.max(0, ...(snapshot.logs || []).map((log) => log.id)); renderStatus(); });
 window.addEventListener("hashchange", () => showView(location.hash.slice(1) || "overview"));
 

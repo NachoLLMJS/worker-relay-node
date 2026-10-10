@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
+import { subscriptionCliEnvironment } from "./subscription-cli-adapter.js";
 
-type Runner = (command: string, args: string[]) => Promise<string>;
+type Runner = (command: string, args: string[], env: NodeJS.ProcessEnv) => Promise<string>;
 
-const defaultRunner: Runner = (command, args) => new Promise((resolve, reject) => {
-  const child = spawn(command, args, { shell: false, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+const defaultRunner: Runner = (command, args, env) => new Promise((resolve, reject) => {
+  const child = spawn(command, args, { env, shell: false, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
   let stdout = "";
   let stderr = "";
   const timer = setTimeout(() => {
@@ -53,10 +54,11 @@ export async function generateWithHiggsfield(input: {
   prompt: string;
   args?: string[];
   command?: string;
+  sourceEnv?: NodeJS.ProcessEnv;
   runner?: Runner;
 }): Promise<string> {
   const args = ["generate", "create", input.modelId, "--prompt", input.prompt, ...(input.args ?? []), "--wait", "--json"];
-  const stdout = await (input.runner ?? defaultRunner)(input.command ?? "higgsfield", args);
+  const stdout = await (input.runner ?? defaultRunner)(input.command ?? "higgsfield", args, subscriptionCliEnvironment(input.sourceEnv));
   try {
     const url = findUrl(JSON.parse(stdout));
     if (url) return url;

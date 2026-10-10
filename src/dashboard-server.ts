@@ -84,15 +84,9 @@ export async function buildDashboardServer(options: { runtime: WorkerRuntime; pu
           if (!options.codexAuth) return writeJson(reply, 404, { error: "not_found" });
           return writeJson(reply, 202, options.codexAuth.startLogin());
         }
-        if (url.pathname === "/api/worker/start") options.runtime.start();
+        if (url.pathname === "/api/worker/start") await options.runtime.start();
         else if (url.pathname === "/api/worker/stop") options.runtime.stop();
-        else if (url.pathname === "/api/worker/capabilities") {
-          const body = await readJson(request) as { capabilities?: unknown };
-          if (!Array.isArray(body.capabilities) || !body.capabilities.every((value) => typeof value === "string")) {
-            return writeJson(reply, 400, { error: "invalid_capabilities" });
-          }
-          options.runtime.setCapabilities(body.capabilities);
-        } else if (url.pathname === "/api/worker/public-requests") {
+        else if (url.pathname === "/api/worker/public-requests") {
           const body = await readJson(request) as { enabled?: unknown };
           if (typeof body.enabled !== "boolean") return writeJson(reply, 400, { error: "invalid_setting" });
           options.runtime.setAcceptPublicRequests(body.enabled);

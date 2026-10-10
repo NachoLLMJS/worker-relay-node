@@ -1,5 +1,5 @@
 import { readFile, writeFile } from "node:fs/promises";
-import { listServices } from "./service-catalog.js";
+import { detectWorkerCapabilities, type DetectedService } from "./capability-detector.js";
 
 type Env = Record<string, string | undefined>;
 
@@ -27,14 +27,13 @@ export type DashboardConfigSummary = {
   higgsfieldEnabled: boolean;
   higgsfieldCommand: string;
   higgsfieldGenjutsuModelId: string;
-  services: ReturnType<typeof listServices>;
+  services: DetectedService[];
 };
 
 export type DashboardConfigUpdate = Partial<{
   coordinatorUrl: string;
   workerAccessToken: string;
   workerName: string;
-  workerCapabilities: string[];
   acceptPublicRequests: boolean;
   subscriptionCliEnabled: boolean;
   codexCommand: string;
@@ -60,7 +59,6 @@ const KEY_BY_FIELD: Record<keyof DashboardConfigUpdate, string> = {
   coordinatorUrl: "COORDINATOR_URL",
   workerAccessToken: "WORKER_ACCESS_TOKEN",
   workerName: "WORKER_NAME",
-  workerCapabilities: "WORKER_CAPABILITIES",
   acceptPublicRequests: "ACCEPT_PUBLIC_REQUESTS",
   subscriptionCliEnabled: "SUBSCRIPTION_CLI_ENABLED",
   codexCommand: "CODEX_COMMAND",
@@ -109,20 +107,11 @@ function stringValue(value: unknown, field: string): string {
   return trimmed;
 }
 
-function validateCapabilities(values: unknown): string[] {
-  if (!Array.isArray(values) || !values.every((value) => typeof value === "string")) throw new Error("workerCapabilities must be a string array");
-  const allowed = new Set(listServices().map((service) => service.id));
-  const unique = [...new Set(values.map((value) => value.trim()).filter(Boolean))];
-  if (!unique.length) throw new Error("at least one capability is required");
-  for (const capability of unique) if (!allowed.has(capability)) throw new Error(`${capability}: unsupported capability`);
-  return unique;
-}
-
-function summarize(env: Env): DashboardConfigSummary {
+function summarize(env: Env, services: DetectedService[]): DashboardConfigSummary {
   return {
     coordinatorUrl: env.COORDINATOR_URL?.trim() || "https://api-production-cc9f.up.railway.app",
     workerName: env.WORKER_NAME?.trim() || "friend-worker-1",
-    workerCapabilities: csv(env.WORKER_CAPABILITIES, ["text.ollama"]),
+    workerCapabilities: csv(env.WORKER_CAPABILITIES, []),
     acceptPublicRequests: bool(env.ACCEPT_PUBLIC_REQUESTS),
     workerAccessTokenSet: Boolean(env.WORKER_ACCESS_TOKEN?.trim()),
     subscriptionCliEnabled: bool(env.SUBSCRIPTION_CLI_ENABLED),
@@ -143,12 +132,11 @@ function summarize(env: Env): DashboardConfigSummary {
     higgsfieldEnabled: bool(env.HIGGSFIELD_ENABLED),
     higgsfieldCommand: env.HIGGSFIELD_COMMAND?.trim() || "higgsfield",
     higgsfieldGenjutsuModelId: env.HIGGSFIELD_GENJUTSU_MODEL_ID?.trim() || "",
-    services: listServices()
+    services
   };
 }
 
 function serializeValue(value: unknown, field: keyof DashboardConfigUpdate): string {
-  if (field === "workerCapabilities") return validateCapabilities(value).join(",");
   if (typeof value === "boolean") return value ? "true" : "false";
   return stringValue(value, field);
 }
@@ -167,7 +155,22 @@ function applyUpdatesToText(text: string, updates: DashboardConfigUpdate): { tex
   return { text: next, env: parseEnv(next) };
 }
 
-export function createDashboardConfigStore(envPath: string, baseEnv: Env = process.env) {
+function applyEnvValues(text: string, values: Record<string, string>): string {
+  let next = text.endsWith("\n") ? text : `${text}\n`;
+  for (const [key, value] of Object.entries(values)) {
+    const line = `${key}=${value}`;
+    const pattern = new RegExp(`^${key}=.*$`, "m");
+    next = pattern.test(next) ? next.replace(pattern, line) : `${next}${line}\n`;
+  }
+  return next;
+}
+
+export function createDashboardConfigStore(
+  envPath: string,
+  baseEnv: Env = process.env,
+  options: { detector?: typeof detectWorkerCapabilities } = {}
+) {
+  const detector = options.detector ?? detectWorkerCapabilities;
   async function readMergedEnv(): Promise<Env> {
     let fileEnv: Env = {};
     try { fileEnv = parseEnv(await readFile(envPath, "utf8")); } catch {}
@@ -176,17 +179,27 @@ export function createDashboardConfigStore(envPath: string, baseEnv: Env = proce
 
   return {
     async summary(): Promise<DashboardConfigSummary> {
-      return summarize(await readMergedEnv());
+      let current = "";
+      try { current = await readFile(envPath, "utf8"); } catch {}
+      const merged = await readMergedEnv();
+      const detection = await detector(merged);
+      const detectedText = applyEnvValues(current, detection.envUpdates);
+      await writeFile(envPath, detectedText, "utf8");
+      for (const [key, value] of Object.entries(detection.envUpdates)) process.env[key] = value;
+      return summarize({ ...merged, ...detection.envUpdates }, detection.services);
     },
     async save(update: DashboardConfigUpdate): Promise<DashboardConfigSummary> {
       let current = "";
       try { current = await readFile(envPath, "utf8"); } catch {}
       const { text, env } = applyUpdatesToText(current, update);
-      await writeFile(envPath, text, "utf8");
-      for (const [key, value] of Object.entries(env)) {
+      const detection = await detector({ ...baseEnv, ...env });
+      const detectedText = applyEnvValues(text, detection.envUpdates);
+      const detectedEnv = { ...env, ...detection.envUpdates };
+      await writeFile(envPath, detectedText, "utf8");
+      for (const [key, value] of Object.entries(detectedEnv)) {
         if (value !== undefined) process.env[key] = value;
       }
-      return summarize({ ...baseEnv, ...env });
+      return summarize({ ...baseEnv, ...detectedEnv }, detection.services);
     }
   };
 }

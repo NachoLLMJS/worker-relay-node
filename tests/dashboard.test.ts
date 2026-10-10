@@ -36,6 +36,33 @@ describe("local worker runtime", () => {
     await vi.waitFor(() => expect(runtime.snapshot().running).toBe(false));
   });
 
+  it("re-detects capabilities before start and fails closed when none are ready", async () => {
+    const detected = vi.fn(async () => ["text.openai.codex"]);
+    const runtime = new WorkerRuntime({
+      workerId: "worker-local",
+      configuredCapabilities: [],
+      initialCapabilities: [],
+      acceptPublicRequests: false,
+      cycle: async () => "idle",
+      detectCapabilities: detected,
+      sleep: () => new Promise<void>(() => {})
+    });
+    await runtime.start();
+    expect(detected).toHaveBeenCalledOnce();
+    expect(runtime.snapshot().activeCapabilities).toEqual(["text.openai.codex"]);
+    runtime.stop();
+
+    const unavailable = new WorkerRuntime({
+      workerId: "worker-local",
+      configuredCapabilities: [],
+      initialCapabilities: [],
+      acceptPublicRequests: false,
+      cycle: async () => "idle",
+      detectCapabilities: async () => []
+    });
+    await expect(unavailable.start()).rejects.toThrow("no provider capabilities are currently ready");
+  });
+
   it("can enable only capabilities validated at startup", () => {
     const runtime = new WorkerRuntime({
       workerId: "worker-local",
@@ -130,7 +157,12 @@ describe("local dashboard server", () => {
       acceptPublicRequests: false,
       cycle: async () => "idle"
     });
-    const store = createDashboardConfigStore(envFile, { ...process.env });
+    const store = createDashboardConfigStore(envFile, { ...process.env }, {
+      detector: async (env) => {
+        const capabilities = env?.SUBSCRIPTION_CLI_ENABLED === "true" ? ["text.openai.codex"] : [];
+        return { capabilities, envUpdates: { WORKER_CAPABILITIES: capabilities.join(",") }, services: [] };
+      }
+    });
     const server = await buildDashboardServer({
       runtime,
       publicDir: join(root, "public"),
@@ -152,7 +184,6 @@ describe("local dashboard server", () => {
         body: JSON.stringify({
           workerAccessToken: "secret-worker-token-1234567890",
           workerName: "nacho-wsl-worker",
-          workerCapabilities: ["text.openai.codex"],
           subscriptionCliEnabled: true,
           codexCommand: "/home/nachete/.hermes/node/bin/codex",
           codexModel: "gpt-5.1-codex",
@@ -191,6 +222,41 @@ describe("local dashboard server", () => {
     }
   });
 
+  it("keeps the detected capability list empty when no provider is ready", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "worker-relay-config-"));
+    const envFile = join(dir, ".env");
+    await writeFile(envFile, "WORKER_CAPABILITIES=text.ollama\n", "utf8");
+    const store = createDashboardConfigStore(envFile, {}, {
+      detector: async () => ({ capabilities: [], envUpdates: { WORKER_CAPABILITIES: "" }, services: [] })
+    });
+    try {
+      expect((await store.summary()).workerCapabilities).toEqual([]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("persists automatically detected capabilities and does not accept operator-selected capabilities", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "worker-relay-config-"));
+    const envFile = join(dir, ".env");
+    await writeFile(envFile, "OLLAMA_MODEL=missing\nWORKER_CAPABILITIES=legacy.manual\n", "utf8");
+    const detector = vi.fn(async () => ({
+      capabilities: ["text.ollama", "text.openai.sol"],
+      envUpdates: { OLLAMA_MODEL: "qwen3:8b", WORKER_CAPABILITIES: "text.ollama,text.openai.sol" },
+      services: []
+    }));
+    const store = createDashboardConfigStore(envFile, {}, { detector });
+    try {
+      const summary = await store.summary();
+      expect(summary.workerCapabilities).toEqual(["text.ollama", "text.openai.sol"]);
+      expect(summary.ollamaModel).toBe("qwen3:8b");
+      expect(await readFile(envFile, "utf8")).toContain("WORKER_CAPABILITIES=text.ollama,text.openai.sol");
+      await expect(store.save({ workerCapabilities: ["text.ollama"] } as never)).rejects.toThrow("unsupported configuration field");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("rejects unknown configuration fields before writing the env file", async () => {
     const dir = await mkdtemp(join(tmpdir(), "worker-relay-config-"));
     const envFile = join(dir, ".env");
@@ -221,6 +287,9 @@ describe("local dashboard server", () => {
     expect(source).not.toContain("localStorage");
     expect(source).not.toContain("ethereum.request");
     expect(source).not.toContain('request("/api/worker/capabilities"');
+    expect(source).not.toContain("workerCapabilities:");
+    expect(source).not.toContain('checkbox.dataset.capability');
+    expect(source).not.toContain('updateCapabilities');
     expect(source).not.toContain('request("/api/worker/public-requests"');
     expect(source).toContain('request("/api/codex/login"');
     const renderStatusBody = source.slice(source.indexOf("function renderStatus"), source.indexOf("async function refresh"));

@@ -6,8 +6,8 @@ This repository is for a private, invite-only Worker Relay beta. Report vulnerab
 
 ## Trust boundary
 
-- The coordinator sends text prompts and a service ID.
-- The worker claims only service IDs listed in `WORKER_CAPABILITIES`.
+- The coordinator sends text prompts and either one service ID or a service ID list.
+- The worker claims only service IDs currently verified by automatic local detection. The persisted `WORKER_CAPABILITIES` value is generated, not operator-selected.
 - Anonymous public jobs are rejected unless the operator explicitly sets `ACCEPT_PUBLIC_REQUESTS=true`.
 - Provider credentials remain on the worker machine.
 - The worker receives no PostgreSQL credentials, Railway administration credential, wallet key, or contract key.
@@ -22,7 +22,7 @@ This repository is for a private, invite-only Worker Relay beta. Report vulnerab
 2. Keep wallets, seed phrases, SSH keys, personal documents, and unrelated repositories off that machine.
 3. Set restrictive permissions on `.env`.
 4. Never commit or share `.env`.
-5. Enable only explicit capabilities.
+5. Configure only providers the operator intends to fund; the worker auto-detects every ready service for those configured providers.
 6. Treat API capabilities as potentially billable and subscription CLI capabilities as consuming plan allowance and rate limits.
 7. Configure provider-side budgets, alerts, and rate limits before continuous operation.
 8. Test one job with `--once` before enabling a background service.

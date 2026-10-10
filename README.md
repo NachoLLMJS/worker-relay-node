@@ -1,6 +1,6 @@
 # Worker Relay Node
 
-Run an approved Worker Relay worker from a Windows PC, Linux computer, or VPS. The node polls the coordinator over outbound HTTPS, claims only jobs matching its explicit capability allowlist, runs the selected AI provider, and returns the result.
+Run an approved Worker Relay worker from a Windows PC, Linux computer, or VPS. The node auto-detects ready local providers, polls the coordinator over outbound HTTPS, claims only matching jobs, runs every service selected by the lease, and returns a single or composite result.
 
 Coordinator: `https://api-production-cc9f.up.railway.app`
 
@@ -28,7 +28,7 @@ For the easiest setup, run the local Worker Command Center first:
 npm run dashboard
 ```
 
-The command creates `.env` from `.env.example` if needed and opens `http://127.0.0.1:4317` automatically. Use the Configuration page to paste the private `WORKER_ACCESS_TOKEN`, set `WORKER_NAME`, choose capabilities, save API keys/model IDs, enable Codex subscription mode, and start/stop polling. When the network operator supplies a `workerId`/token pair, `WORKER_NAME` must exactly match that assigned `workerId`; the credential will not authenticate under another name. Secrets are written only to local `.env`; the dashboard reports only whether each secret is present and never renders secret values back to the browser.
+The command creates `.env` from `.env.example` if needed and opens `http://127.0.0.1:4317` automatically. Use the Configuration page to paste the private `WORKER_ACCESS_TOKEN`, set `WORKER_NAME`, save provider credentials/model preferences, enable optional CLI providers, and start/stop polling. Capabilities are detected automatically and cannot be selected manually. When the network operator supplies a `workerId`/token pair, `WORKER_NAME` must exactly match that assigned `workerId`; the credential will not authenticate under another name. Secrets are written only to local `.env`; the dashboard reports only whether each secret is present and never renders secret values back to the browser.
 
 Anonymous public jobs are disabled by default. Enable `ACCEPT_PUBLIC_REQUESTS` only if you deliberately want those jobs to consume the capabilities, subscriptions, API credits, and local compute enabled on this worker.
 
@@ -67,13 +67,7 @@ Video through Higgsfield:
 - `video.higgsfield.genjutsu`
 - `video.higgsfield.kling-3-turbo`
 
-Example capability list:
-
-```text
-WORKER_CAPABILITIES=text.ollama,text.openai.sol,text.anthropic.fable,text.deepseek.flash,video.higgsfield.seedance-2.5
-```
-
-The node never enables a hosted provider automatically. Every capability must be explicitly listed. API-backed jobs can consume provider credits, while Codex jobs consume the locally authenticated ChatGPT plan's allowance. Provider terms, plan limits, and eligibility remain the worker operator's responsibility.
+Capabilities are read-only detection results in the dashboard. Ollama is available only when `/api/tags` responds with an installed model; hosted API services require their locally stored credentials to pass an authenticated models-endpoint probe; Codex requires explicit subscription opt-in plus a valid ChatGPT login; Higgsfield requires explicit opt-in plus a successful CLI account probe. `WORKER_CAPABILITIES` remains as a generated compatibility field and is overwritten by detection. API-backed jobs can consume provider credits, while Codex jobs consume the locally authenticated ChatGPT plan's allowance.
 
 ## Provider setup
 
@@ -85,13 +79,13 @@ Install Ollama, then:
 ollama pull llama3.2
 ```
 
-Keep `OLLAMA_BASE_URL=http://127.0.0.1:11434` and select the downloaded model with `OLLAMA_MODEL`.
+Keep `OLLAMA_BASE_URL=http://127.0.0.1:11434`. If `OLLAMA_MODEL` is not installed, detection selects and persists the first model returned by Ollama.
 
 ### OpenAI
 
 Set `OPENAI_API_KEY` in `.env`. The defaults can be overridden with `OPENAI_CHATGPT_MODEL`, `OPENAI_SOL_MODEL`, and `OPENAI_IMAGE_MODEL`. GPT Image uses OpenAI directly; it is not routed through Higgsfield.
 
-For subscription-backed text jobs, install Codex, run `codex login`, confirm `codex login status` reports a ChatGPT login, set `SUBSCRIPTION_CLI_ENABLED=true`, and enable `text.openai.codex`. Codex runs in an empty temporary directory with shell, browser, computer-use, app, skill, and workspace tools disabled. On Windows, OpenAI currently recommends using Codex inside WSL.
+For subscription-backed text jobs, install Codex, run `codex login`, confirm `codex login status` reports a ChatGPT login, and set `SUBSCRIPTION_CLI_ENABLED=true`. Keep the portable default `CODEX_COMMAND=codex`: the worker auto-detects Codex from `PATH` and common per-user, Hermes, and npm-prefix locations, so usernames and home directories do not need to be hard-coded. An absolute command path remains available only as a manual override. Codex runs in an empty temporary directory with shell, browser, computer-use, app, skill, and workspace tools disabled. On Windows, OpenAI currently recommends using Codex inside WSL.
 
 ### Anthropic
 

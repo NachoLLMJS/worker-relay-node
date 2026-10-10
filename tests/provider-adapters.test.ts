@@ -3,8 +3,8 @@ import { generateWithAnthropic } from "../src/anthropic-adapter.js";
 import { generateWithDeepSeek } from "../src/deepseek-adapter.js";
 import { generateWithHiggsfield } from "../src/higgsfield-adapter.js";
 import { generateWithOpenAI } from "../src/openai-adapter.js";
-import { buildWorkerExecutor } from "../src/provider-registry.js";
-import { generateWithCodexSubscription, resolveSubscriptionCliInvocation, subscriptionCliIsLoggedIn } from "../src/subscription-cli-adapter.js";
+import { buildWorkerExecutor, executeSelectedServices } from "../src/provider-registry.js";
+import { generateWithCodexSubscription, resolveSubscriptionCliInvocation, subscriptionCliEnvironment, subscriptionCliIsLoggedIn } from "../src/subscription-cli-adapter.js";
 
 describe("hosted text adapters", () => {
   it("calls the OpenAI Responses API and returns output text", async () => {
@@ -47,17 +47,79 @@ describe("hosted text adapters", () => {
 
 describe("Higgsfield adapter", () => {
   it("uses the CLI without a shell and returns a generated media URL", async () => {
-    const runner = vi.fn(async (_command: string, args: string[]) => {
+    const runner = vi.fn(async (_command: string, args: string[], env: NodeJS.ProcessEnv) => {
       expect(args).toEqual(expect.arrayContaining(["generate", "create", "seedance_2_5", "--prompt", "moon city", "--wait", "--json"]));
+      expect(env.WORKER_ACCESS_TOKEN).toBeUndefined();
+      expect(env.OPENAI_API_KEY).toBeUndefined();
       return JSON.stringify([{ outputs: [{ url: "https://cdn.example/video.mp4" }] }]);
     });
-    await expect(generateWithHiggsfield({ modelId: "seedance_2_5", prompt: "moon city", args: ["--mode", "t2v"], runner })).resolves.toBe("https://cdn.example/video.mp4");
+    await expect(generateWithHiggsfield({ modelId: "seedance_2_5", prompt: "moon city", args: ["--mode", "t2v"], sourceEnv: { PATH: "test-path", WORKER_ACCESS_TOKEN: "secret", OPENAI_API_KEY: "secret" }, runner })).resolves.toBe("https://cdn.example/video.mp4");
   });
 });
 
 describe("subscription CLI adapters", () => {
   it("accepts Codex login status when the CLI writes it to stderr", () => {
     expect(subscriptionCliIsLoggedIn("codex", "", "Logged in using ChatGPT\n")).toBe(true);
+  });
+
+  it("preserves a custom npm prefix for portable Codex discovery", () => {
+    expect(subscriptionCliEnvironment({ NPM_CONFIG_PREFIX: "/opt/npm-user" })).toEqual({
+      NPM_CONFIG_PREFIX: "/opt/npm-user"
+    });
+  });
+
+  it("detects Codex from npm's lowercase prefix environment on Linux", () => {
+    const env = subscriptionCliEnvironment({
+      PATH: "/usr/bin:/bin",
+      HOME: "/home/worker",
+      npm_config_prefix: "/home/worker/.npm-packages"
+    });
+    const invocation = resolveSubscriptionCliInvocation("codex", env, "linux", () => false, (path) => path === "/home/worker/.npm-packages/bin/codex");
+
+    expect(invocation.command).toBe("/home/worker/.npm-packages/bin/codex");
+  });
+
+  it("detects Codex under a custom npm prefix", () => {
+    const invocation = resolveSubscriptionCliInvocation("codex", {
+      PATH: "/usr/bin:/bin",
+      HOME: "/home/worker",
+      NPM_CONFIG_PREFIX: "/opt/npm-user"
+    }, "linux", () => false, (path) => path === "/opt/npm-user/bin/codex");
+
+    expect(invocation).toEqual({
+      command: "/opt/npm-user/bin/codex",
+      argsPrefix: []
+    });
+  });
+
+  it("detects a Hermes-managed Codex install on Linux when it is missing from the dashboard PATH", () => {
+    const invocation = resolveSubscriptionCliInvocation("codex", {
+      PATH: "/usr/bin:/bin",
+      HOME: "/home/operator"
+    }, "linux", () => false, (path) => path === "/home/operator/.hermes/node/bin/codex");
+
+    expect(invocation).toEqual({
+      command: "/home/operator/.hermes/node/bin/codex",
+      argsPrefix: []
+    });
+  });
+
+  it("detects Codex beside the Node executable used to launch the dashboard", () => {
+    const invocation = resolveSubscriptionCliInvocation("codex", {
+      PATH: "/usr/bin:/bin",
+      HOME: "/home/worker"
+    }, "linux", () => false, (path) => path === "/opt/hermes-runtime/bin/codex", "/opt/hermes-runtime/bin/node");
+
+    expect(invocation.command).toBe("/opt/hermes-runtime/bin/codex");
+  });
+
+  it("detects a Hermes-managed Codex install on Windows outside PATH", () => {
+    const invocation = resolveSubscriptionCliInvocation("codex", {
+      PATH: "C:\\Windows\\System32",
+      USERPROFILE: "C:\\Users\\worker"
+    }, "win32", (path) => path === "C:\\Users\\worker\\.hermes\\node\\bin\\codex.exe");
+
+    expect(invocation).toEqual({ command: "C:\\Users\\worker\\.hermes\\node\\bin\\codex.exe", argsPrefix: [] });
   });
 
   it("resolves the Windows npm Codex shim to its JavaScript launcher without a shell", () => {
@@ -108,34 +170,72 @@ describe("subscription CLI adapters", () => {
 });
 
 describe("worker provider registry", () => {
-  it("requires explicit capabilities and fails closed when a hosted credential is missing", () => {
-    expect(() => buildWorkerExecutor({ WORKER_CAPABILITIES: "text.openai.sol" })).toThrow("OPENAI_API_KEY is required");
-    expect(() => buildWorkerExecutor({ WORKER_CAPABILITIES: "text.deepseek.flash" })).toThrow("DEEPSEEK_API_KEY is required");
-  });
+  const unavailableOllama = vi.fn(async () => new Response("unavailable", { status: 503 }));
+  const authenticatedHostedProviders = vi.fn(async (url: string) => url.includes("127.0.0.1:11434")
+    ? new Response("unavailable", { status: 503 })
+    : new Response(JSON.stringify({ data: [] }), { status: 200 }));
 
-  it("builds only the explicitly approved worker capabilities", () => {
-    const worker = buildWorkerExecutor({
-      WORKER_CAPABILITIES: "text.ollama,text.anthropic.fable,text.deepseek.v4-pro",
+  it("auto-detects configured hosted providers and ignores the legacy capability allowlist", async () => {
+    const worker = await buildWorkerExecutor({
+      WORKER_CAPABILITIES: "text.ollama",
       ANTHROPIC_API_KEY: "configured",
       DEEPSEEK_API_KEY: "configured"
-    });
-    expect(worker.capabilities).toEqual(["text.ollama", "text.anthropic.fable", "text.deepseek.v4-pro"]);
+    }, { fetcher: authenticatedHostedProviders });
+    expect(worker.capabilities).toEqual(["text.anthropic.fable", "text.deepseek.flash", "text.deepseek.v4-pro"]);
   });
 
-  it("requires explicit subscription CLI opt-in and verifies local login before advertising it", () => {
-    expect(() => buildWorkerExecutor({ WORKER_CAPABILITIES: "text.openai.codex" })).toThrow("SUBSCRIPTION_CLI_ENABLED=true is required");
+  it("fails closed when no provider is currently ready", async () => {
+    await expect(buildWorkerExecutor({}, { fetcher: unavailableOllama })).rejects.toThrow("no provider capabilities are currently ready");
+  });
+
+  it("requires subscription CLI opt-in and verifies local login before advertising Codex", async () => {
+    const disabledProbe = vi.fn();
+    await expect(buildWorkerExecutor({}, { fetcher: unavailableOllama, subscriptionProbe: disabledProbe })).rejects.toThrow("no provider capabilities");
+    expect(disabledProbe).not.toHaveBeenCalled();
+
     const probe = vi.fn();
-    const worker = buildWorkerExecutor({
-      WORKER_CAPABILITIES: "text.openai.codex",
+    const worker = await buildWorkerExecutor({
       SUBSCRIPTION_CLI_ENABLED: "true",
       CODEX_COMMAND: "codex-test"
-    }, { subscriptionProbe: probe });
+    }, { fetcher: unavailableOllama, subscriptionProbe: probe });
     expect(probe).toHaveBeenCalledOnce();
     expect(probe).toHaveBeenCalledWith("codex", "codex-test", expect.any(Object));
     expect(worker.capabilities).toEqual(["text.openai.codex"]);
   });
 
-  it("rejects the retired Claude Code subscription capability", () => {
-    expect(() => buildWorkerExecutor({ WORKER_CAPABILITIES: "text.anthropic.claude-code" })).toThrow("unsupported service");
+  it("returns single-service output unchanged and composite JSON for combined service requirements", async () => {
+    const run = vi.fn(async (serviceId: string) => `result:${serviceId}`);
+    await expect(executeSelectedServices({ id: "one", prompt: "hello", serviceId: "text.openai.sol" }, run)).resolves.toBe("result:text.openai.sol");
+    const composite = await executeSelectedServices({
+      id: "many",
+      prompt: "hello",
+      serviceId: "text.openai.sol",
+      serviceIds: ["text.openai.sol", "text.anthropic.fable"]
+    }, run);
+    expect(JSON.parse(composite)).toEqual({
+      services: [
+        { serviceId: "text.openai.sol", output: "result:text.openai.sol" },
+        { serviceId: "text.anthropic.fable", output: "result:text.anthropic.fable" }
+      ]
+    });
+  });
+
+  it("attempts every selected service even when one combined execution fails", async () => {
+    const run = vi.fn(async (serviceId: string) => {
+      if (serviceId === "text.openai.sol") throw new Error("provider failed");
+      return "anthropic result";
+    });
+    await expect(executeSelectedServices({
+      id: "many",
+      prompt: "hello",
+      serviceId: "text.openai.sol",
+      serviceIds: ["text.openai.sol", "text.anthropic.fable"]
+    }, run)).rejects.toThrow("provider failed");
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects the retired Claude Code subscription capability", async () => {
+    const worker = await buildWorkerExecutor({ OPENAI_API_KEY: "configured" }, { fetcher: authenticatedHostedProviders });
+    await expect(worker.execute({ id: "job", prompt: "hello", serviceId: "text.anthropic.claude-code" })).rejects.toThrow("unapproved service");
   });
 });

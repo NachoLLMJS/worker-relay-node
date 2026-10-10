@@ -27,11 +27,6 @@ async function ensureEnvFile(envPath: string): Promise<void> {
   }
 }
 
-function parseCapabilities(value: string | undefined): string[] {
-  const parsed = value?.split(",").map((item) => item.trim()).filter(Boolean) ?? [];
-  return parsed.length ? [...new Set(parsed)] : ["text.ollama"];
-}
-
 function applySummary(runtime: WorkerRuntime, summary: DashboardConfigSummary): void {
   runtime.reconfigure({
     workerId: summary.workerName,
@@ -52,19 +47,23 @@ const runtime = new WorkerRuntime({
   configuredCapabilities: initialSummary.workerCapabilities,
   initialCapabilities: initialSummary.workerCapabilities,
   acceptPublicRequests: initialSummary.acceptPublicRequests,
-  cycle: ({ capabilities, acceptPublicRequests: acceptsPublic, onEvent }) => {
+  detectCapabilities: async () => {
+    const summary = await configStore.summary();
+    applySummary(runtime, summary);
+    return summary.workerCapabilities;
+  },
+  cycle: async ({ acceptPublicRequests: acceptsPublic, onEvent }) => {
     const workerToken = process.env.WORKER_ACCESS_TOKEN?.trim();
     if (!workerToken) throw new Error("WORKER_ACCESS_TOKEN is missing. Open Configuration in the dashboard and save the worker token.");
     const apiUrl = process.env.COORDINATOR_URL?.trim() || "https://api-production-cc9f.up.railway.app";
     const workerId = process.env.WORKER_NAME?.trim() || initialSummary.workerName;
-    process.env.WORKER_CAPABILITIES = capabilities.join(",");
     process.env.ACCEPT_PUBLIC_REQUESTS = acceptsPublic ? "true" : "false";
-    const provider = buildWorkerExecutor(process.env);
+    const provider = await buildWorkerExecutor(process.env);
     return runWorkerOnce({
       apiUrl,
       workerId,
       workerToken,
-      capabilities,
+      capabilities: provider.capabilities,
       acceptPublicRequests: acceptsPublic,
       onEvent,
       execute: provider.execute
@@ -86,7 +85,9 @@ console.log(`Worker Command Center: ${url}`);
 console.log("The dashboard is bound to loopback only. Configure tokens/API keys locally under Configuration; secrets are never exposed back to the browser.");
 openBrowser(url);
 
-if (process.env.WORKER_AUTO_START?.trim().toLowerCase() !== "false" && initialSummary.workerAccessTokenSet) runtime.start();
+if (process.env.WORKER_AUTO_START?.trim().toLowerCase() !== "false" && initialSummary.workerAccessTokenSet) {
+  await runtime.start().catch((error) => console.error(error instanceof Error ? error.message : String(error)));
+}
 else if (!initialSummary.workerAccessTokenSet) console.log("Worker is not polling yet: open Configuration and save WORKER_ACCESS_TOKEN, then click Start worker.");
 
 const shutdown = async () => {

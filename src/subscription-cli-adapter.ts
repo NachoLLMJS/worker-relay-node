@@ -1,8 +1,8 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { accessSync, constants, existsSync, statSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, win32 } from "node:path";
+import { join, posix, win32 } from "node:path";
 
 export type CliRunInput = {
   command: string;
@@ -18,11 +18,21 @@ export type SubscriptionCli = "codex";
 export type SubscriptionProbe = (kind: SubscriptionCli, command: string, env: NodeJS.ProcessEnv) => void;
 type CliInvocation = { command: string; argsPrefix: string[] };
 
+function isExecutableFile(path: string): boolean {
+  try {
+    if (!statSync(path).isFile()) return false;
+    accessSync(path, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const ENV_ALLOWLIST = [
   "PATH", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "SYSTEMROOT", "SystemRoot",
   "COMSPEC", "ComSpec", "PATHEXT", "TEMP", "TMP", "TERM", "LANG", "LC_ALL", "XDG_CONFIG_HOME",
   "XDG_DATA_HOME", "CODEX_HOME", "SSL_CERT_FILE", "SSL_CERT_DIR", "HTTPS_PROXY",
-  "HTTP_PROXY", "NO_PROXY"
+  "HTTP_PROXY", "NO_PROXY", "NPM_CONFIG_PREFIX", "npm_config_prefix"
 ] as const;
 
 export function subscriptionCliEnvironment(source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
@@ -37,14 +47,44 @@ export function resolveSubscriptionCliInvocation(
   command: string,
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
-  pathExists: (path: string) => boolean = existsSync
+  pathExists: (path: string) => boolean = existsSync,
+  candidateExists: (path: string) => boolean = isExecutableFile,
+  execPath: string = process.execPath
 ): CliInvocation {
-  if (platform !== "win32") return { command, argsPrefix: [] };
+  if (platform !== "win32") {
+    if (command.includes("/")) return { command, argsPrefix: [] };
+    const home = env.HOME || env.USERPROFILE;
+    const npmPrefix = env.NPM_CONFIG_PREFIX || env.npm_config_prefix;
+    const candidates = [
+      ...String(env.PATH || "").split(":").filter(Boolean).map((directory) => posix.join(directory, command)),
+      posix.join(posix.dirname(execPath), command),
+      ...(home ? [
+        posix.join(home, ".hermes", "node", "bin", command),
+        posix.join(home, ".local", "bin", command),
+        posix.join(home, ".npm-global", "bin", command)
+      ] : []),
+      ...(npmPrefix ? [posix.join(npmPrefix, "bin", command)] : [])
+    ];
+    for (const candidate of new Set(candidates)) {
+      if (candidateExists(candidate)) return { command: candidate, argsPrefix: [] };
+    }
+    return { command, argsPrefix: [] };
+  }
 
   const hasDirectory = win32.dirname(command) !== "." || /[\\/]/.test(command);
+  const home = env.USERPROFILE || env.HOME;
+  const npmPrefix = env.NPM_CONFIG_PREFIX || env.npm_config_prefix;
   const bases = hasDirectory
     ? [command]
-    : String(env.PATH || "").split(";").filter(Boolean).map((directory) => win32.join(directory, command));
+    : [
+        ...String(env.PATH || "").split(";").filter(Boolean).map((directory) => win32.join(directory, command)),
+        win32.join(win32.dirname(execPath), command),
+        ...(home ? [
+          win32.join(home, ".hermes", "node", "bin", command),
+          win32.join(home, "AppData", "Roaming", "npm", command)
+        ] : []),
+        ...(npmPrefix ? [win32.join(npmPrefix, command), win32.join(npmPrefix, "bin", command)] : [])
+      ];
 
   for (const base of bases) {
     const executable = /\.(?:exe|com)$/i.test(base) ? base : `${base}.exe`;
@@ -53,7 +93,7 @@ export function resolveSubscriptionCliInvocation(
     const shim = /\.cmd$/i.test(base) ? base : `${base}.cmd`;
     if (!pathExists(shim)) continue;
     const launcher = win32.join(win32.dirname(shim), "node_modules", "@openai", "codex", "bin", "codex.js");
-    if (pathExists(launcher)) return { command: process.execPath, argsPrefix: [launcher] };
+    if (pathExists(launcher)) return { command: execPath, argsPrefix: [launcher] };
   }
 
   return { command, argsPrefix: [] };

@@ -1,4 +1,4 @@
-export type WorkerJob = { id: string; prompt: string; serviceId: string };
+export type WorkerJob = { id: string; prompt: string; serviceId: string; serviceIds?: string[] };
 
 export type WorkerCycleEvent =
   | { type: "claiming" }
@@ -37,6 +37,7 @@ type RuntimeOptions = {
   idleDelayMs?: number;
   completedDelayMs?: number;
   errorDelayMs?: number;
+  detectCapabilities?: () => Promise<string[]>;
 };
 
 export class WorkerRuntime {
@@ -69,8 +70,16 @@ export class WorkerRuntime {
     this.log("info", `Worker ${this.workerId} dashboard ready`);
   }
 
-  start(): void {
+  async start(): Promise<void> {
     if (this.desiredRunning) return;
+    if (this.options.detectCapabilities) {
+      const detected = [...new Set(await this.options.detectCapabilities())];
+      if (!detected.length) throw new Error("no provider capabilities are currently ready");
+      this.configuredCapabilities = detected;
+      this.activeCapabilities = detected;
+      this.log("info", `Detected capabilities: ${detected.join(", ")}`);
+    }
+    if (!this.activeCapabilities.length) throw new Error("no provider capabilities are currently ready");
     this.desiredRunning = true;
     this.startedAt ??= this.now().toISOString();
     this.log("info", "Worker polling started");
@@ -102,7 +111,6 @@ export class WorkerRuntime {
     if (input.configuredCapabilities) this.configuredCapabilities = [...new Set(input.configuredCapabilities)];
     if (input.activeCapabilities) {
       const unique = [...new Set(input.activeCapabilities)];
-      if (unique.length === 0) throw new Error("at least one capability must remain active");
       this.assertCapabilities(unique);
       this.activeCapabilities = unique;
     }
