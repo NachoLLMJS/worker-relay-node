@@ -140,6 +140,34 @@ describe("local dashboard server", () => {
     }
   });
 
+  it("rejects multiline configuration values before writing the env file", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "worker-relay-config-"));
+    const envFile = join(dir, ".env");
+    const original = "WORKER_NAME=friend-worker-1\nACCEPT_PUBLIC_REQUESTS=false\n";
+    await writeFile(envFile, original, "utf8");
+    const store = createDashboardConfigStore(envFile, {});
+    try {
+      await expect(store.save({ workerName: "friend-worker\nACCEPT_PUBLIC_REQUESTS=true" })).rejects.toThrow("workerName");
+      expect(await readFile(envFile, "utf8")).toBe(original);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects unknown configuration fields before writing the env file", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "worker-relay-config-"));
+    const envFile = join(dir, ".env");
+    const original = "WORKER_NAME=friend-worker-1\n";
+    await writeFile(envFile, original, "utf8");
+    const store = createDashboardConfigStore(envFile, {});
+    try {
+      await expect(store.save({ unexpectedField: "value" } as never)).rejects.toThrow("unsupported configuration field");
+      expect(await readFile(envFile, "utf8")).toBe(original);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("ships a local UI without unsafe dynamic HTML or persistent browser storage", async () => {
     const [html, css, source] = await Promise.all([
       readFile(join(root, "public", "index.html"), "utf8"),
@@ -153,5 +181,9 @@ describe("local dashboard server", () => {
     expect(source).not.toContain("innerHTML");
     expect(source).not.toContain("localStorage");
     expect(source).not.toContain("ethereum.request");
+    expect(source).not.toContain('request("/api/worker/capabilities"');
+    expect(source).not.toContain('request("/api/worker/public-requests"');
+    const renderStatusBody = source.slice(source.indexOf("function renderStatus"), source.indexOf("async function refresh"));
+    expect(renderStatusBody).not.toContain("renderConfig();");
   });
 });

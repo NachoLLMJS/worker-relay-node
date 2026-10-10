@@ -102,7 +102,11 @@ function bool(value: string | undefined): boolean {
 
 function stringValue(value: unknown, field: string): string {
   if (typeof value !== "string") throw new Error(`${field} must be a string`);
-  return value.trim();
+  const trimmed = value.trim();
+  if (trimmed.includes(String.fromCharCode(10)) || trimmed.includes(String.fromCharCode(13)) || trimmed.includes(String.fromCharCode(0))) {
+    throw new Error(`${field} must be a single-line value`);
+  }
+  return trimmed;
 }
 
 function validateCapabilities(values: unknown): string[] {
@@ -153,6 +157,7 @@ function applyUpdatesToText(text: string, updates: DashboardConfigUpdate): { tex
   let next = text.endsWith("\n") ? text : `${text}\n`;
   for (const [field, rawValue] of Object.entries(updates) as [keyof DashboardConfigUpdate, unknown][]) {
     if (rawValue === undefined) continue;
+    if (!Object.prototype.hasOwnProperty.call(KEY_BY_FIELD, field)) throw new Error(`${field}: unsupported configuration field`);
     const key = KEY_BY_FIELD[field];
     const value = serializeValue(rawValue, field);
     const line = `${key}=${value}`;

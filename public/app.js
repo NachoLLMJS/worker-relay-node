@@ -206,7 +206,6 @@ function renderStatus() {
   renderTerminal($("#overview-terminal"), 8);
   renderTerminal($("#terminal-feed"), 300);
   renderModels();
-  renderConfig();
   renderJobs();
 }
 
@@ -219,8 +218,8 @@ async function updateCapabilities(changed) {
   const selected = $$('#models-grid input[type="checkbox"]:checked').map((input) => input.dataset.capability);
   if (!selected.length) { changed.checked = true; return; }
   try {
-    snapshot = await request("/api/worker/capabilities", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ capabilities: selected }) });
-    renderStatus();
+    config = await request("/api/config", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ workerCapabilities: selected }) });
+    await refresh();
   } catch (error) { changed.checked = !changed.checked; window.alert(error.message); }
 }
 
@@ -228,7 +227,7 @@ $$('[data-view]').forEach((button) => button.addEventListener("click", () => sho
 $$('[data-jump]').forEach((button) => button.addEventListener("click", () => showView(button.dataset.jump)));
 $("#worker-toggle").addEventListener("click", async () => { snapshot = await request(snapshot.running ? "/api/worker/stop" : "/api/worker/start", { method: "POST" }); renderStatus(); });
 $("#save-config").addEventListener("click", () => saveConfig().catch((error) => window.alert(error.message)));
-$("#public-jobs-toggle").addEventListener("change", async (event) => { snapshot = await request("/api/worker/public-requests", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: event.target.checked }) }); renderStatus(); });
+$("#public-jobs-toggle").addEventListener("change", async (event) => { config = await request("/api/config", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ acceptPublicRequests: event.target.checked }) }); await refresh(); });
 $("#models-grid").addEventListener("change", (event) => { if (event.target.matches('input[type="checkbox"]')) updateCapabilities(event.target); });
 $("#clear-terminal").addEventListener("click", () => { visualLogFloor = Math.max(0, ...(snapshot.logs || []).map((log) => log.id)); renderStatus(); });
 window.addEventListener("hashchange", () => showView(location.hash.slice(1) || "overview"));
@@ -237,6 +236,7 @@ window.addEventListener("hashchange", () => showView(location.hash.slice(1) || "
   dashboardToken = (await request("/api/session")).token;
   config = await request("/api/config").catch(() => null);
   await refresh();
+  renderConfig();
   showView(titles[location.hash.slice(1)] ? location.hash.slice(1) : "overview");
   poller = setInterval(() => refresh().catch(() => {}), 1_000);
 })().catch((error) => {
