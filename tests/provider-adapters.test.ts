@@ -4,7 +4,7 @@ import { generateWithDeepSeek } from "../src/deepseek-adapter.js";
 import { generateWithHiggsfield } from "../src/higgsfield-adapter.js";
 import { generateWithOpenAI } from "../src/openai-adapter.js";
 import { buildWorkerExecutor, executeSelectedServices } from "../src/provider-registry.js";
-import { generateWithCodexSubscription, resolveSubscriptionCliInvocation, subscriptionCliEnvironment, subscriptionCliIsLoggedIn } from "../src/subscription-cli-adapter.js";
+import { generateWithCodexSubscription, resolveSubscriptionCliInvocation, subscriptionCliEnvironment, subscriptionCliFailureMessage, subscriptionCliIsLoggedIn } from "../src/subscription-cli-adapter.js";
 
 describe("hosted text adapters", () => {
   it("calls the OpenAI Responses API and returns output text", async () => {
@@ -58,6 +58,59 @@ describe("Higgsfield adapter", () => {
 });
 
 describe("subscription CLI adapters", () => {
+  it("reports a Codex JSONL failure without echoing the submitted request", () => {
+    const privatePrompt = "request text must stay private";
+    const message = subscriptionCliFailureMessage(1, null,
+      `{"type":"turn.failed","error":{"message":"model is unavailable: ${privatePrompt}"}}`,
+      `failed while processing ${privatePrompt}`,
+      [privatePrompt]);
+    expect(message).toContain("exit=1");
+    expect(message).toContain("kind=model_unavailable");
+    expect(message).not.toContain(privatePrompt);
+  });
+
+  it("redacts reformatted prompt fragments from stderr diagnostics", () => {
+    const message = subscriptionCliFailureMessage(1, null, "", "request alpha failed", ["private alpha request"]);
+    expect(message).toContain("exit=1");
+    expect(message).not.toContain("alpha");
+    expect(message).not.toContain("request");
+  });
+
+  it("does not emit diagnostic text when the submitted request is too short to redact safely", () => {
+    const message = subscriptionCliFailureMessage(1, null,
+      '{"type":"turn.failed","error":{"message":"failed for: hi"}}', "prompt hi failed", ["hi"]);
+    expect(message).toContain("exit=1");
+    expect(message).not.toContain("failed for");
+    expect(message).not.toContain("prompt hi");
+  });
+
+  it("bounds failure diagnostics, includes termination signals and redacts credential shapes", () => {
+    const message = subscriptionCliFailureMessage(null, "SIGTERM",
+      '{"type":"turn.failed","error":{"message":"Bearer top-secret"}}',
+      `bncw_${"a".repeat(43)} sk-${"b".repeat(30)} ${"x".repeat(1_000)}`);
+    expect(message).toContain("exit=null");
+    expect(message).toContain("signal=SIGTERM");
+    expect(message).not.toContain(`bncw_${"a".repeat(43)}`);
+    expect(message).not.toContain(`sk-${"b".repeat(30)}`);
+    expect(message).not.toContain("top-secret");
+    expect(message.length).toBeLessThanOrEqual(500);
+  });
+
+  it("sanitizes Codex error events even when the CLI exits successfully", async () => {
+    const privatePrompt = "private prompt must never appear";
+    const runner = vi.fn(async () =>
+      `{"type":"item.completed","item":{"type":"error","message":"model is unavailable: ${privatePrompt} Bearer hidden"}}\n`);
+    try {
+      await generateWithCodexSubscription({ prompt: privatePrompt, runner });
+      throw new Error("expected Codex failure");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      expect(message).toContain("kind=model_unavailable");
+      expect(message).not.toContain(privatePrompt);
+      expect(message).not.toContain("hidden");
+    }
+  });
+
   it("accepts Codex login status when the CLI writes it to stderr", () => {
     expect(subscriptionCliIsLoggedIn("codex", "", "Logged in using ChatGPT\n")).toBe(true);
   });

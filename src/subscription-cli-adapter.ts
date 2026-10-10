@@ -99,6 +99,48 @@ export function resolveSubscriptionCliInvocation(
   return { command, argsPrefix: [] };
 }
 
+function subscriptionCliErrorKind(diagnosticValue: string): string {
+  const diagnostic = diagnosticValue.toLowerCase();
+  return /rate.?limit|quota|\b429\b/.test(diagnostic) ? "rate_limited"
+    : /unauthorized|authentication|not logged|log.?in|\b401\b|\b403\b/.test(diagnostic) ? "authentication_failed"
+    : /model[^\n]*(?:unavailable|not found|unsupported)|unknown model/.test(diagnostic) ? "model_unavailable"
+    : /permission denied|eacces|sandbox/.test(diagnostic) ? "permission_denied"
+    : /network|connection|dns|certificate|\btls\b|timed? out|timeout/.test(diagnostic) ? "network_error"
+    : /config|unexpected argument|unknown (?:option|feature)|invalid (?:option|argument|value)|provider/.test(diagnostic) ? "configuration_error"
+    : /internal server|\b5\d\d\b/.test(diagnostic) ? "service_error"
+    : "unknown_error";
+}
+
+export function subscriptionCliFailureMessage(
+  code: number | null,
+  signal: NodeJS.Signals | null,
+  stdout: string,
+  stderr: string,
+  _sensitiveValues: string[] = []
+): string {
+  let codexError = "";
+  for (const line of stdout.split(/\r?\n/).filter(Boolean)) {
+    try {
+      const event = JSON.parse(line) as {
+        type?: string;
+        error?: string | { message?: string };
+        item?: { type?: string; message?: string };
+      };
+      const eventError = typeof event.error === "string" ? event.error : event.error?.message;
+      if (event.type === "turn.failed" && eventError) codexError = eventError;
+      if (event.type === "item.completed" && event.item?.type === "error" && event.item.message) codexError = event.item.message;
+    } catch {}
+  }
+  const kind = subscriptionCliErrorKind(`${codexError}\n${stderr}`);
+  const parts = [`exit=${code ?? "null"}`, `kind=${kind}`];
+  if (signal) parts.push(`signal=${signal}`);
+  if (codexError) parts.push("codex_event=error");
+  if (stdout) parts.push(`stdout_bytes=${Buffer.byteLength(stdout, "utf8")}`);
+  if (stderr) parts.push(`stderr_bytes=${Buffer.byteLength(stderr, "utf8")}`);
+  if (!stdout && !stderr) parts.push("no diagnostic output");
+  return `subscription CLI failed: ${parts.join(" | ")}`.slice(0, 500);
+}
+
 const defaultRunner: CliRunner = (input) => new Promise((resolve, reject) => {
   const invocation = resolveSubscriptionCliInvocation(input.command, input.env);
   const child = spawn(invocation.command, [...invocation.argsPrefix, ...input.args], {
@@ -138,8 +180,11 @@ const defaultRunner: CliRunner = (input) => new Promise((resolve, reject) => {
     }
   });
   child.on("error", (error) => finish(error));
-  child.on("close", (code) => {
-    if (code !== 0) return finish(new Error(`subscription CLI failed (${code}): ${stderr.trim().slice(0, 500)}`));
+  child.on("close", (code, signal) => {
+    const requestMarker = "\nREQUEST:\n";
+    const requestOffset = input.stdin.indexOf(requestMarker);
+    const sensitiveValues = requestOffset >= 0 ? [input.stdin.slice(requestOffset + requestMarker.length)] : [input.stdin];
+    if (code !== 0) return finish(new Error(subscriptionCliFailureMessage(code, signal, stdout, stderr, sensitiveValues)));
     finish();
   });
   child.stdin.end(input.stdin);
@@ -166,9 +211,17 @@ function parseCodexOutput(stdout: string): string {
       continue;
     }
     if (!event || typeof event !== "object") continue;
-    const record = event as { type?: string; item?: { type?: string; text?: string; message?: string } };
+    const record = event as {
+      type?: string;
+      error?: string | { message?: string };
+      item?: { type?: string; text?: string; message?: string };
+    };
+    const eventError = typeof record.error === "string" ? record.error : record.error?.message;
+    if (record.type === "turn.failed") {
+      throw new Error(`Codex failed: kind=${subscriptionCliErrorKind(eventError || "")}`);
+    }
     if (record.type === "item.completed" && record.item?.type === "error") {
-      throw new Error(`Codex failed: ${record.item.message || "unknown error"}`);
+      throw new Error(`Codex failed: kind=${subscriptionCliErrorKind(record.item.message || "")}`);
     }
     if (record.type === "item.completed" && record.item?.type === "agent_message" && record.item.text?.trim()) {
       finalMessage = record.item.text.trim();
