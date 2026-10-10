@@ -1,28 +1,18 @@
 import "dotenv/config";
-import { buildWorkerExecutor } from "./provider-registry.js";
-import { runWorkerOnce } from "./worker.js";
+import { resolve } from "node:path";
+import { createDashboardConfigStore } from "./config-store.js";
+import { runHeadlessWorkerCycle } from "./headless-cycle.js";
+import { boundedErrorMessage, installBoundedFatalErrorHandlers } from "./error-message.js";
 
-const required = (name: string): string => {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`${name} is required`);
-  return value;
-};
+installBoundedFatalErrorHandlers();
 
-const apiUrl = required("COORDINATOR_URL");
-const workerToken = required("WORKER_ACCESS_TOKEN");
-const workerId = process.env.WORKER_NAME?.trim() || "friend-worker-1";
-const acceptPublicRequests = process.env.ACCEPT_PUBLIC_REQUESTS?.trim().toLowerCase() === "true";
+const configStore = createDashboardConfigStore(resolve(process.cwd(), ".env"), { ...process.env });
 const once = process.argv.includes("--once");
 
 async function cycle() {
-  const provider = await buildWorkerExecutor();
-  const result = await runWorkerOnce({
-    apiUrl,
-    workerId,
-    workerToken,
-    capabilities: provider.capabilities,
-    acceptPublicRequests,
-    execute: provider.execute
+  const { workerId, result } = await runHeadlessWorkerCycle({
+    ensureWorkerIdentity: () => configStore.ensureWorkerIdentity(),
+    env: process.env
   });
   console.log(JSON.stringify({ time: new Date().toISOString(), workerId, result }));
   return result;
@@ -36,7 +26,7 @@ if (once) {
       const result = await cycle();
       await new Promise((resolve) => setTimeout(resolve, result === "idle" ? 5_000 : 500));
     } catch (error) {
-      console.error(error instanceof Error ? error.message : String(error));
+      console.error(boundedErrorMessage(error));
       await new Promise((resolve) => setTimeout(resolve, 10_000));
     }
   }

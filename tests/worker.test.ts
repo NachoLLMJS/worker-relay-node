@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { generateWithOllama } from "../src/ollama-adapter.js";
 import { runWorkerOnce } from "../src/worker.js";
+import { runHeadlessWorkerCycle } from "../src/headless-cycle.js";
 
 describe("Ollama adapter", () => {
   it("sends a bounded non-streaming request and returns the generated text", async () => {
@@ -16,6 +17,59 @@ describe("Ollama adapter", () => {
 });
 
 describe("worker cycle", () => {
+  it("rejects an unsafe coordinator at the final token transmission boundary", async () => {
+    const fetcher = vi.fn();
+    await expect(runWorkerOnce({
+      apiUrl: "http://network.example?",
+      workerId: "worker-1",
+      workerToken: "private-token",
+      capabilities: ["text.ollama"],
+      fetcher,
+      execute: async () => "unused"
+    })).rejects.toThrow("Coordinator URL");
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("retries identity verification and enrollment on every headless cycle", async () => {
+    const ensureWorkerIdentity = vi.fn()
+      .mockRejectedValueOnce(new Error("worker enrollment failed (503)"))
+      .mockResolvedValueOnce({ workerId: "fresh-worker-id", workerTokenSet: true });
+    const env: NodeJS.ProcessEnv = {
+      COORDINATOR_URL: "https://network.example",
+      WORKER_ID: "fresh-worker-id",
+      WORKER_ACCESS_TOKEN: `bncw_${"a".repeat(43)}`,
+      ACCEPT_PUBLIC_REQUESTS: "true"
+    };
+    const execute = vi.fn(async () => "unused");
+    const buildExecutor = vi.fn(async () => ({ capabilities: ["text.ollama"], services: [], envUpdates: {}, execute }));
+    const runOnce = vi.fn(async () => "idle" as const);
+
+    await expect(runHeadlessWorkerCycle({ ensureWorkerIdentity, env, buildExecutor, runOnce })).rejects.toThrow("worker enrollment failed (503)");
+    await expect(runHeadlessWorkerCycle({ ensureWorkerIdentity, env, buildExecutor, runOnce })).resolves.toEqual({ workerId: "fresh-worker-id", result: "idle" });
+    expect(ensureWorkerIdentity).toHaveBeenCalledTimes(2);
+    expect(runOnce).toHaveBeenCalledWith(expect.objectContaining({
+      apiUrl: "https://network.example",
+      workerId: "fresh-worker-id",
+      workerToken: env.WORKER_ACCESS_TOKEN,
+      acceptPublicRequests: true
+    }));
+  });
+
+  it("includes the coordinator error code when a claim is rejected", async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ error: "invalid_worker_id" }), {
+      status: 400,
+      headers: { "content-type": "application/json" }
+    }));
+    await expect(runWorkerOnce({
+      apiUrl: "https://network.example",
+      workerId: "Amigo 3",
+      workerToken: "unused",
+      capabilities: ["text.ollama"],
+      fetcher,
+      execute: async () => "unused"
+    })).rejects.toThrow("claim failed (400): invalid_worker_id");
+  });
+
   it("claims one job, runs the adapter and completes the same lease", async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = [];
     const fetcher = vi.fn(async (url: string, init?: RequestInit) => {

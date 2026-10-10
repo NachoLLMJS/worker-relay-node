@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { WorkerCycleEvent } from "./worker-runtime.js";
+import { validateCoordinatorUrl } from "./coordinator-url.js";
 
 type Fetcher = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -37,7 +38,7 @@ export async function runWorkerOnce(input: {
     "x-worker-id": input.workerId,
     "content-type": "application/json"
   };
-  const base = input.apiUrl.replace(/\/$/, "");
+  const base = validateCoordinatorUrl(input.apiUrl);
   input.onEvent?.({ type: "claiming" });
   const claim = await fetcher(`${base}/api/worker/claim`, {
     method: "POST",
@@ -48,7 +49,14 @@ export async function runWorkerOnce(input: {
     input.onEvent?.({ type: "idle" });
     return "idle";
   }
-  if (!claim.ok) throw new Error(`claim failed (${claim.status})`);
+  if (!claim.ok) {
+    let detail = "";
+    try {
+      const payload = await claim.json() as { error?: unknown };
+      if (typeof payload.error === "string" && /^[a-z0-9_-]{1,80}$/i.test(payload.error)) detail = `: ${payload.error}`;
+    } catch {}
+    throw new Error(`claim failed (${claim.status})${detail}`);
+  }
   const parsed = leaseSchema.safeParse(await claim.json());
   if (!parsed.success) throw new Error("coordinator returned an invalid lease");
   const serviceIds = parsed.data.serviceIds ?? parsed.data.job.serviceIds;

@@ -2,7 +2,7 @@
 
 ## Supported use
 
-This repository is for a private, invite-only Worker Relay beta. Report vulnerabilities privately to the repository owner rather than opening a public issue containing exploit details or credentials.
+This repository is for an open-enrollment Worker Relay beta. Report vulnerabilities privately to the repository owner rather than opening a public issue containing exploit details or credentials.
 
 ## Trust boundary
 
@@ -31,7 +31,7 @@ This repository is for a private, invite-only Worker Relay beta. Report vulnerab
 
 ## Current limitations
 
-- The private beta uses a shared worker bearer credential rather than per-device cryptographic enrollment.
+- First start enrolls a random per-device worker ID and server-authenticated bearer credential automatically. Open enrollment is stateless; the plaintext identity remains only in the local `.env`.
 - A worker assigned a prompt can read that prompt.
 - Generated media URLs may be hosted by the selected provider and may expire.
 - The coordinator does not currently meter provider cost or reimburse worker owners.

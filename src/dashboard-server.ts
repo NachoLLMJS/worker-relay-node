@@ -92,8 +92,8 @@ export async function buildDashboardServer(options: { runtime: WorkerRuntime; pu
           options.runtime.setAcceptPublicRequests(body.enabled);
         } else return writeJson(reply, 404, { error: "not_found" });
         return writeJson(reply, 200, options.runtime.snapshot());
-      } catch (error) {
-        return writeJson(reply, 400, { error: error instanceof Error ? error.message : "invalid_request" });
+      } catch {
+        return writeJson(reply, 400, { error: "invalid_request" });
       }
     }
 

@@ -5,8 +5,9 @@ The worker loads `.env` from the repository root through `dotenv`. `.env` is ign
 ## Coordinator
 
 - `COORDINATOR_URL` — exact HTTPS Worker Relay coordinator URL.
-- `WORKER_ACCESS_TOKEN` — private network credential supplied by the operator.
-- `WORKER_NAME` — unique ID matching `[A-Za-z0-9_-]{3,64}`.
+- `WORKER_ID` — generated automatically by the coordinator on first start; do not edit it.
+- `WORKER_ACCESS_TOKEN` — generated automatically with `WORKER_ID` and stored only in local `.env`; no invitation code is required.
+- `WORKER_NAME` — friendly operator label; spaces are allowed and it is not used as the authentication ID.
 - `WORKER_CAPABILITIES` — generated compatibility field. Detection overwrites it with currently ready services; do not edit it as an allowlist.
 - `ACCEPT_PUBLIC_REQUESTS` — defaults to `false`; set to `true` only to let anonymous requests use this worker's enabled capabilities.
 

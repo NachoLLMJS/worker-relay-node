@@ -4,12 +4,7 @@ Your task is to install and verify this Worker Relay node on the current compute
 
 ## Required information
 
-Ask the human operator for only these missing items:
-
-1. The assigned `workerId` and private `WORKER_ACCESS_TOKEN` pair through a secure local secret-entry method, not normal chat.
-2. Use the assigned `workerId` exactly as `WORKER_NAME`; do not invent or rename it. It contains letters, numbers, `_`, or `-`.
-3. Which capability IDs the operator explicitly approves.
-4. Provider credentials only for approved hosted capabilities.
+Ask the human operator only for a friendly worker name and any provider credentials or paid-provider opt-ins they deliberately want to use. The coordinator creates `WORKER_ID` and `WORKER_ACCESS_TOKEN` automatically on first start; never request or paste an invitation code.
 
 The coordinator is:
 
@@ -24,7 +19,7 @@ https://api-production-cc9f.up.railway.app
 3. Run `npm ci`; if the current npm/platform rejects optional cross-platform packages, run `npm install --no-package-lock` as the fallback and report that fallback.
 4. Start the local dashboard with `npm run dashboard`.
 5. The dashboard creates `.env` from `.env.example` if missing and opens `http://127.0.0.1:4317`.
-6. Direct the human operator to the Configuration page for the few values that cannot be invented: the assigned worker token, its matching worker ID as the exact worker name, provider credentials, and explicit Codex/Higgsfield spending opt-ins. Do not ask repeated chat questions when the dashboard can collect the value locally.
+6. Direct the human operator to the Configuration page for a friendly worker name, provider credentials, and explicit Codex/Higgsfield spending opt-ins. Worker enrollment is automatic.
 7. The Models page is read-only. Saving configuration and starting the worker auto-detect ready capabilities and persist the generated compatibility list.
 8. Configure only selected providers:
    - Ollama: install it, pull the approved model, and verify its local API.

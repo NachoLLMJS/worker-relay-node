@@ -9,6 +9,9 @@ import { buildWorkerExecutor } from "./provider-registry.js";
 import { runWorkerOnce } from "./worker.js";
 import { WorkerRuntime } from "./worker-runtime.js";
 import { createCodexAuthController } from "./codex-auth.js";
+import { boundedErrorMessage, installBoundedFatalErrorHandlers } from "./error-message.js";
+
+installBoundedFatalErrorHandlers();
 
 function openBrowser(url: string): void {
   if (process.env.DASHBOARD_AUTO_OPEN?.trim().toLowerCase() === "false" || process.argv.includes("--no-open")) return;
@@ -29,7 +32,7 @@ async function ensureEnvFile(envPath: string): Promise<void> {
 
 function applySummary(runtime: WorkerRuntime, summary: DashboardConfigSummary): void {
   runtime.reconfigure({
-    workerId: summary.workerName,
+    workerId: summary.workerId || "unenrolled-worker",
     configuredCapabilities: summary.workerCapabilities,
     activeCapabilities: summary.workerCapabilities,
     acceptPublicRequests: summary.acceptPublicRequests
@@ -40,23 +43,31 @@ const envPath = resolve(process.cwd(), ".env");
 await ensureEnvFile(envPath);
 loadDotenv({ path: envPath, override: true });
 const configStore = createDashboardConfigStore(envPath, { ...process.env });
-const initialSummary = await configStore.summary();
+let enrolledAtStartup = true;
+await configStore.ensureWorkerIdentity().catch((error) => {
+  enrolledAtStartup = false;
+  console.error(boundedErrorMessage(error));
+});
+const initialSummary = await configStore.summary({ persistDetection: enrolledAtStartup });
 
 const runtime = new WorkerRuntime({
-  workerId: initialSummary.workerName,
+  workerId: initialSummary.workerId || "unenrolled-worker",
   configuredCapabilities: initialSummary.workerCapabilities,
   initialCapabilities: initialSummary.workerCapabilities,
   acceptPublicRequests: initialSummary.acceptPublicRequests,
   detectCapabilities: async () => {
+    await configStore.ensureWorkerIdentity();
     const summary = await configStore.summary();
     applySummary(runtime, summary);
     return summary.workerCapabilities;
   },
   cycle: async ({ acceptPublicRequests: acceptsPublic, onEvent }) => {
+    await configStore.ensureWorkerIdentity();
     const workerToken = process.env.WORKER_ACCESS_TOKEN?.trim();
-    if (!workerToken) throw new Error("WORKER_ACCESS_TOKEN is missing. Open Configuration in the dashboard and save the worker token.");
+    if (!workerToken) throw new Error("Automatic worker enrollment did not provide an identity token.");
     const apiUrl = process.env.COORDINATOR_URL?.trim() || "https://api-production-cc9f.up.railway.app";
-    const workerId = process.env.WORKER_NAME?.trim() || initialSummary.workerName;
+    const workerId = process.env.WORKER_ID?.trim() || initialSummary.workerId;
+    if (!workerId) throw new Error("Automatic worker enrollment did not provide a worker ID.");
     process.env.ACCEPT_PUBLIC_REQUESTS = acceptsPublic ? "true" : "false";
     const provider = await buildWorkerExecutor(process.env);
     return runWorkerOnce({
@@ -82,13 +93,12 @@ const port = Number(process.env.DASHBOARD_PORT || 4317);
 if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error("DASHBOARD_PORT must be a valid TCP port");
 const url = await dashboard.listen(port, "127.0.0.1");
 console.log(`Worker Command Center: ${url}`);
-console.log("The dashboard is bound to loopback only. Configure tokens/API keys locally under Configuration; secrets are never exposed back to the browser.");
+console.log("The dashboard is bound to loopback only. Worker identity is enrolled automatically; provider secrets are never exposed back to the browser.");
 openBrowser(url);
 
-if (process.env.WORKER_AUTO_START?.trim().toLowerCase() !== "false" && initialSummary.workerAccessTokenSet) {
-  await runtime.start().catch((error) => console.error(error instanceof Error ? error.message : String(error)));
+if (process.env.WORKER_AUTO_START?.trim().toLowerCase() !== "false") {
+  await runtime.start().catch((error) => console.error(boundedErrorMessage(error)));
 }
-else if (!initialSummary.workerAccessTokenSet) console.log("Worker is not polling yet: open Configuration and save WORKER_ACCESS_TOKEN, then click Start worker.");
 
 const shutdown = async () => {
   runtime.stop();

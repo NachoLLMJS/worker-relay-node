@@ -132,6 +132,7 @@ function renderConfig() {
   if (!config) return;
   setInput("#cfg-worker-name", config.workerName);
   setInput("#cfg-coordinator-url", config.coordinatorUrl);
+  setInput("#cfg-worker-id", config.workerId);
   setInput("#cfg-codex-command", config.codexCommand);
   setInput("#cfg-codex-model", config.codexModel);
   setInput("#cfg-ollama-model", config.ollamaModel);
@@ -146,7 +147,7 @@ function renderConfig() {
   setInput("#cfg-higgsfield-genjutsu", config.higgsfieldGenjutsuModelId);
   setChecked("#cfg-subscription-enabled", config.subscriptionCliEnabled);
   setChecked("#cfg-higgsfield-enabled", config.higgsfieldEnabled);
-  const secrets = [config.workerAccessTokenSet ? "worker token saved" : "worker token missing", config.openaiApiKeySet ? "OpenAI key saved" : "OpenAI key missing", config.anthropicApiKeySet ? "Anthropic key saved" : "Anthropic key missing", config.deepseekApiKeySet ? "DeepSeek key saved" : "DeepSeek key missing"];
+  const secrets = [config.workerId ? `open worker enrolled: ${config.workerId}` : "worker enrollment pending", config.openaiApiKeySet ? "OpenAI key saved" : "OpenAI key missing", config.anthropicApiKeySet ? "Anthropic key saved" : "Anthropic key missing", config.deepseekApiKeySet ? "DeepSeek key saved" : "DeepSeek key missing"];
   setText($("#config-message"), secrets.join(" · "));
 }
 
@@ -195,16 +196,14 @@ async function saveConfig() {
     higgsfieldCommand: inputValue("#cfg-higgsfield-command"),
     higgsfieldGenjutsuModelId: inputValue("#cfg-higgsfield-genjutsu")
   };
-  const token = inputValue("#cfg-worker-token");
   const openaiKey = inputValue("#cfg-openai-key");
   const anthropicKey = inputValue("#cfg-anthropic-key");
   const deepseekKey = inputValue("#cfg-deepseek-key");
-  if (token) body.workerAccessToken = token;
   if (openaiKey) body.openaiApiKey = openaiKey;
   if (anthropicKey) body.anthropicApiKey = anthropicKey;
   if (deepseekKey) body.deepseekApiKey = deepseekKey;
   config = await request("/api/config", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  ["#cfg-worker-token", "#cfg-openai-key", "#cfg-anthropic-key", "#cfg-deepseek-key"].forEach((id) => setInput(id, ""));
+  ["#cfg-openai-key", "#cfg-anthropic-key", "#cfg-deepseek-key"].forEach((id) => setInput(id, ""));
   await refresh();
   renderConfig();
 }

@@ -1,11 +1,16 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { chmod, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { detectWorkerCapabilities, type DetectedService } from "./capability-detector.js";
+import { validateCoordinatorUrl } from "./coordinator-url.js";
 
 type Env = Record<string, string | undefined>;
+type EnrollmentFetcher = (url: string, init?: RequestInit) => Promise<Response>;
 
 export type DashboardConfigSummary = {
   coordinatorUrl: string;
   workerName: string;
+  workerId: string;
   workerCapabilities: string[];
   acceptPublicRequests: boolean;
   workerAccessTokenSet: boolean;
@@ -32,7 +37,6 @@ export type DashboardConfigSummary = {
 
 export type DashboardConfigUpdate = Partial<{
   coordinatorUrl: string;
-  workerAccessToken: string;
   workerName: string;
   acceptPublicRequests: boolean;
   subscriptionCliEnabled: boolean;
@@ -57,7 +61,6 @@ export type DashboardConfigUpdate = Partial<{
 
 const KEY_BY_FIELD: Record<keyof DashboardConfigUpdate, string> = {
   coordinatorUrl: "COORDINATOR_URL",
-  workerAccessToken: "WORKER_ACCESS_TOKEN",
   workerName: "WORKER_NAME",
   acceptPublicRequests: "ACCEPT_PUBLIC_REQUESTS",
   subscriptionCliEnabled: "SUBSCRIPTION_CLI_ENABLED",
@@ -111,6 +114,7 @@ function summarize(env: Env, services: DetectedService[]): DashboardConfigSummar
   return {
     coordinatorUrl: env.COORDINATOR_URL?.trim() || "https://api-production-cc9f.up.railway.app",
     workerName: env.WORKER_NAME?.trim() || "friend-worker-1",
+    workerId: env.WORKER_ID?.trim() || "",
     workerCapabilities: csv(env.WORKER_CAPABILITIES, []),
     acceptPublicRequests: bool(env.ACCEPT_PUBLIC_REQUESTS),
     workerAccessTokenSet: Boolean(env.WORKER_ACCESS_TOKEN?.trim()),
@@ -165,26 +169,112 @@ function applyEnvValues(text: string, values: Record<string, string>): string {
   return next;
 }
 
+export function windowsAclIsOwnerOnly(output: string, envPath: string, account: string): boolean {
+  const expected = account.trim().toUpperCase();
+  if (!expected) return false;
+  const pathUpper = envPath.toUpperCase();
+  const entries = output.split("\n").flatMap((line) => {
+    const marker = line.indexOf(":(");
+    if (marker < 0) return [];
+    let principal = line.slice(0, marker).trim();
+    if (principal.toUpperCase().startsWith(pathUpper)) principal = principal.slice(envPath.length).trim();
+    return principal ? [{ principal: principal.toUpperCase(), rights: line.slice(marker) }] : [];
+  });
+  return entries.length === 1
+    && entries[0].principal === expected
+    && entries[0].rights.includes("(F)")
+    && !entries[0].rights.toUpperCase().includes("DENY");
+}
+
 export function createDashboardConfigStore(
   envPath: string,
   baseEnv: Env = process.env,
-  options: { detector?: typeof detectWorkerCapabilities } = {}
+  options: { detector?: typeof detectWorkerCapabilities; fetcher?: EnrollmentFetcher } = {}
 ) {
   const detector = options.detector ?? detectWorkerCapabilities;
+  const fetcher = options.fetcher ?? fetch;
+  async function securePath(path: string): Promise<void> {
+    if (process.platform === "win32") {
+      const username = process.env.USERNAME?.trim();
+      const domain = process.env.USERDOMAIN?.trim();
+      if (!username || !domain) throw new Error("Cannot secure .env without the current Windows account");
+      const account = `${domain}\\${username}`;
+      const result = spawnSync("icacls", [path, "/inheritance:r", "/grant:r", `${account}:(F)`], { windowsHide: true, encoding: "utf8" });
+      if (result.status !== 0) throw new Error("Failed to restrict .env permissions to the current Windows user");
+      const verified = spawnSync("icacls", [path], { windowsHide: true, encoding: "utf8" });
+      if (verified.status !== 0 || !windowsAclIsOwnerOnly(verified.stdout, path, account)) {
+        throw new Error("Failed to verify owner-only .env permissions");
+      }
+    } else {
+      await chmod(path, 0o600);
+    }
+  }
+  async function writeEnvFile(content: string): Promise<void> {
+    const tempPath = `${envPath}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
+    try {
+      await writeFile(tempPath, "", { flag: "wx", mode: 0o600 });
+      await securePath(tempPath);
+      await writeFile(tempPath, content, "utf8");
+      await rename(tempPath, envPath);
+      await securePath(envPath);
+    } finally {
+      await unlink(tempPath).catch(() => {});
+    }
+  }
   async function readMergedEnv(): Promise<Env> {
     let fileEnv: Env = {};
     try { fileEnv = parseEnv(await readFile(envPath, "utf8")); } catch {}
     return { ...baseEnv, ...fileEnv };
   }
-
   return {
-    async summary(): Promise<DashboardConfigSummary> {
+    async ensureWorkerIdentity(): Promise<{ workerId: string; workerTokenSet: boolean }> {
+      let current = "";
+      try { current = await readFile(envPath, "utf8"); } catch {}
+      const merged = await readMergedEnv();
+      const fileEnv = parseEnv(current);
+      const fileId = fileEnv.WORKER_ID?.trim() || "";
+      const fileToken = fileEnv.WORKER_ACCESS_TOKEN?.trim() || "";
+      const fileHasIdentityFields = Object.prototype.hasOwnProperty.call(fileEnv, "WORKER_ID")
+        || Object.prototype.hasOwnProperty.call(fileEnv, "WORKER_ACCESS_TOKEN");
+      const existingId = fileId && fileToken ? fileId : fileHasIdentityFields ? "" : baseEnv.WORKER_ID?.trim() || "";
+      const existingToken = fileId && fileToken ? fileToken : fileHasIdentityFields ? "" : baseEnv.WORKER_ACCESS_TOKEN?.trim() || "";
+      const coordinator = validateCoordinatorUrl(merged.COORDINATOR_URL?.trim() || "https://api-production-cc9f.up.railway.app");
+      if (/^[a-zA-Z0-9_-]{3,64}$/.test(existingId) && existingToken) {
+        const verified = await fetcher(`${coordinator}/api/workers/verify`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${existingToken}`, "x-worker-id": existingId }
+        });
+        if (verified.status === 204) return { workerId: existingId, workerTokenSet: true };
+        if (verified.status !== 401 && verified.status !== 403) throw new Error(`worker identity verification failed (${verified.status})`);
+      }
+      const name = merged.WORKER_NAME?.trim() || "Worker";
+      const response = await fetcher(`${coordinator}/api/workers/enroll`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name })
+      });
+      if (!response.ok) throw new Error(`worker enrollment failed (${response.status})`);
+      const enrolled = await response.json() as { workerId?: unknown; workerToken?: unknown };
+      if (typeof enrolled.workerId !== "string" || !/^[a-zA-Z0-9_-]{3,64}$/.test(enrolled.workerId)
+        || typeof enrolled.workerToken !== "string" || !/^bncw_[A-Za-z0-9_-]{43}$/.test(enrolled.workerToken)) {
+        throw new Error("coordinator returned an invalid worker identity");
+      }
+      const next = applyEnvValues(current, { WORKER_ID: enrolled.workerId, WORKER_ACCESS_TOKEN: enrolled.workerToken });
+      await writeEnvFile(next);
+      process.env.WORKER_ID = enrolled.workerId;
+      process.env.WORKER_ACCESS_TOKEN = enrolled.workerToken;
+      return { workerId: enrolled.workerId, workerTokenSet: true };
+    },
+    async summary(options: { persistDetection?: boolean } = {}): Promise<DashboardConfigSummary> {
       let current = "";
       try { current = await readFile(envPath, "utf8"); } catch {}
       const merged = await readMergedEnv();
       const detection = await detector(merged);
+      if (options.persistDetection === false) {
+        return summarize({ ...merged, ...detection.envUpdates }, detection.services);
+      }
       const detectedText = applyEnvValues(current, detection.envUpdates);
-      await writeFile(envPath, detectedText, "utf8");
+      await writeEnvFile(detectedText);
       for (const [key, value] of Object.entries(detection.envUpdates)) process.env[key] = value;
       return summarize({ ...merged, ...detection.envUpdates }, detection.services);
     },
@@ -195,7 +285,7 @@ export function createDashboardConfigStore(
       const detection = await detector({ ...baseEnv, ...env });
       const detectedText = applyEnvValues(text, detection.envUpdates);
       const detectedEnv = { ...env, ...detection.envUpdates };
-      await writeFile(envPath, detectedText, "utf8");
+      await writeEnvFile(detectedText);
       for (const [key, value] of Object.entries(detectedEnv)) {
         if (value !== undefined) process.env[key] = value;
       }

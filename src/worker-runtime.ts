@@ -1,3 +1,5 @@
+import { boundedErrorMessage } from "./error-message.js";
+
 export type WorkerJob = { id: string; prompt: string; serviceId: string; serviceIds?: string[] };
 
 export type WorkerCycleEvent =
@@ -72,14 +74,6 @@ export class WorkerRuntime {
 
   async start(): Promise<void> {
     if (this.desiredRunning) return;
-    if (this.options.detectCapabilities) {
-      const detected = [...new Set(await this.options.detectCapabilities())];
-      if (!detected.length) throw new Error("no provider capabilities are currently ready");
-      this.configuredCapabilities = detected;
-      this.activeCapabilities = detected;
-      this.log("info", `Detected capabilities: ${detected.join(", ")}`);
-    }
-    if (!this.activeCapabilities.length) throw new Error("no provider capabilities are currently ready");
     this.desiredRunning = true;
     this.startedAt ??= this.now().toISOString();
     this.log("info", "Worker polling started");
@@ -151,6 +145,14 @@ export class WorkerRuntime {
       while (this.desiredRunning) {
         this.busy = true;
         try {
+          if (!this.activeCapabilities.length) {
+            if (!this.options.detectCapabilities) throw new Error("no provider capabilities are currently ready");
+            const detected = [...new Set(await this.options.detectCapabilities())];
+            if (!detected.length) throw new Error("no provider capabilities are currently ready");
+            this.configuredCapabilities = detected;
+            this.activeCapabilities = detected;
+            this.log("info", `Detected capabilities: ${detected.join(", ")}`);
+          }
           const result = await this.options.cycle({
             capabilities: [...this.activeCapabilities],
             acceptPublicRequests: this.acceptPublicRequests,
@@ -164,7 +166,7 @@ export class WorkerRuntime {
           this.busy = false;
           this.connected = false;
           this.failedCycles += 1;
-          this.log("error", error instanceof Error ? error.message : String(error));
+          this.log("error", boundedErrorMessage(error));
           await this.sleep(this.options.errorDelayMs ?? 10_000);
         }
       }
@@ -223,7 +225,7 @@ export class WorkerRuntime {
   }
 
   private log(level: WorkerLogRecord["level"], message: string): void {
-    this.logs.unshift({ id: ++this.logSequence, time: this.now().toISOString(), level, message });
+    this.logs.unshift({ id: ++this.logSequence, time: this.now().toISOString(), level, message: boundedErrorMessage(message) });
     if (this.logs.length > 300) this.logs.length = 300;
   }
 

@@ -4,11 +4,17 @@ import { tmpdir } from "node:os";
 import { describe, expect, it, vi } from "vitest";
 import { WorkerRuntime } from "../src/worker-runtime.js";
 import { buildDashboardServer } from "../src/dashboard-server.js";
-import { createDashboardConfigStore } from "../src/config-store.js";
+import { createDashboardConfigStore, windowsAclIsOwnerOnly } from "../src/config-store.js";
+import { boundedErrorMessage } from "../src/error-message.js";
 
 const root = join(import.meta.dirname, "..");
 
 describe("local worker runtime", () => {
+  it("bounds exception text before it reaches logs or stderr", () => {
+    expect(boundedErrorMessage(new Error(`external-${"x".repeat(10_000)}`))).toHaveLength(500);
+    expect(boundedErrorMessage("short failure")).toBe("short failure");
+  });
+
   it("starts, reports connectivity, records completed jobs, and stops without exposing secrets", async () => {
     let releaseSleep = () => {};
     const cycle = vi.fn(async ({ capabilities, onEvent }: { capabilities: string[]; onEvent: (event: import("../src/worker-runtime.js").WorkerCycleEvent) => void }) => {
@@ -48,8 +54,8 @@ describe("local worker runtime", () => {
       sleep: () => new Promise<void>(() => {})
     });
     await runtime.start();
-    expect(detected).toHaveBeenCalledOnce();
-    expect(runtime.snapshot().activeCapabilities).toEqual(["text.openai.codex"]);
+    await vi.waitFor(() => expect(detected).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(runtime.snapshot().activeCapabilities).toEqual(["text.openai.codex"]));
     runtime.stop();
 
     const unavailable = new WorkerRuntime({
@@ -60,7 +66,44 @@ describe("local worker runtime", () => {
       cycle: async () => "idle",
       detectCapabilities: async () => []
     });
-    await expect(unavailable.start()).rejects.toThrow("no provider capabilities are currently ready");
+    await unavailable.start();
+    await vi.waitFor(() => expect(unavailable.snapshot().failedCycles).toBeGreaterThan(0));
+    expect(unavailable.snapshot()).toMatchObject({ running: true, connected: false, completedJobs: 0 });
+    unavailable.stop();
+  });
+
+  it("keeps polling and retries enrollment/capability detection after a transient startup failure", async () => {
+    let releaseSleep = () => {};
+    const detected = vi.fn()
+      .mockRejectedValueOnce(new Error("worker enrollment failed (503)"))
+      .mockResolvedValue(["text.ollama"]);
+    const cycle = vi.fn(async () => "idle" as const);
+    const runtime = new WorkerRuntime({
+      workerId: "unenrolled-worker", configuredCapabilities: [], initialCapabilities: [],
+      acceptPublicRequests: true, detectCapabilities: detected, cycle,
+      sleep: () => new Promise<void>((resolve) => { releaseSleep = resolve; })
+    });
+    await runtime.start();
+    await vi.waitFor(() => expect(runtime.snapshot().failedCycles).toBe(1));
+    releaseSleep();
+    await vi.waitFor(() => expect(cycle).toHaveBeenCalledOnce());
+    expect(detected).toHaveBeenCalledTimes(2);
+    runtime.stop();
+    releaseSleep();
+  });
+
+  it("bounds external error messages retained in dashboard logs", async () => {
+    let releaseSleep = () => {};
+    const runtime = new WorkerRuntime({
+      workerId: "worker-local", configuredCapabilities: ["text.ollama"], initialCapabilities: ["text.ollama"],
+      acceptPublicRequests: true, cycle: async () => { throw new Error(`external-${"x".repeat(10_000)}`); },
+      sleep: () => new Promise<void>((resolve) => { releaseSleep = resolve; })
+    });
+    await runtime.start();
+    await vi.waitFor(() => expect(runtime.snapshot().failedCycles).toBe(1));
+    expect(runtime.snapshot().logs[0].message.length).toBeLessThanOrEqual(500);
+    runtime.stop();
+    releaseSleep();
   });
 
   it("can enable only capabilities validated at startup", () => {
@@ -78,6 +121,136 @@ describe("local worker runtime", () => {
 });
 
 describe("local dashboard server", () => {
+  it("accepts only a single full-control Windows ACL for the current user", () => {
+    const path = "C:\\Users\\operator\\worker\\.env";
+    const acl = (...lines: string[]) => lines.join("\n");
+    expect(windowsAclIsOwnerOnly(acl(`${path} OPERATOR\\alice:(F)`, "Successfully processed 1 files"), path, "OPERATOR\\alice")).toBe(true);
+    expect(windowsAclIsOwnerOnly(acl(`${path} OTHER\\alice:(F)`, "Successfully processed 1 files"), path, "OPERATOR\\alice")).toBe(false);
+    expect(windowsAclIsOwnerOnly(acl(`${path} OPERATOR\\alice:(F)`, "  BUILTIN\\Users:(R)", "Successfully processed 1 files"), path, "OPERATOR\\alice")).toBe(false);
+    expect(windowsAclIsOwnerOnly(acl(`${path} OPERATOR\\alice:(R)`, "Successfully processed 1 files"), path, "OPERATOR\\alice")).toBe(false);
+  });
+
+  it("automatically enrolls an open worker identity and persists it without a pre-issued code", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "worker-relay-enroll-"));
+    const envFile = join(dir, ".env");
+    await writeFile(envFile, "COORDINATOR_URL=https://network.example\nWORKER_NAME=Amigo 3\nWORKER_ID=\nWORKER_ACCESS_TOKEN=\n", "utf8");
+    const enroll = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(url).toBe("https://network.example/api/workers/enroll");
+      expect(JSON.parse(String(init?.body))).toEqual({ name: "Amigo 3" });
+      return new Response(JSON.stringify({
+        name: "Amigo 3",
+        workerId: "amigo-3-a1b2c3d4e5",
+        workerToken: `bncw_${"a".repeat(43)}`
+      }), { status: 201, headers: { "content-type": "application/json" } });
+    });
+    const store = createDashboardConfigStore(envFile, {}, {
+      detector: async () => ({ capabilities: [], envUpdates: { WORKER_CAPABILITIES: "" }, services: [] }),
+      fetcher: enroll
+    });
+    try {
+      const identity = await store.ensureWorkerIdentity();
+      expect(identity).toEqual({ workerId: "amigo-3-a1b2c3d4e5", workerTokenSet: true });
+      expect(enroll).toHaveBeenCalledOnce();
+      const written = await readFile(envFile, "utf8");
+      expect(written).toContain("WORKER_ID=amigo-3-a1b2c3d4e5");
+      expect(written).toContain(`WORKER_ACCESS_TOKEN=bncw_${"a".repeat(43)}`);
+      expect((await store.summary()).workerId).toBe("amigo-3-a1b2c3d4e5");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("re-enrolls when a saved worker identity no longer verifies", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "worker-relay-reenroll-"));
+    const envFile = join(dir, ".env");
+    await writeFile(envFile, `COORDINATOR_URL=https://network.example\nWORKER_NAME=Amigo 3\nWORKER_ID=old-worker-id\nWORKER_ACCESS_TOKEN=bncw_${"x".repeat(43)}\n`, "utf8");
+    const fetcher = vi.fn(async (url: string) => {
+      if (url.endsWith("/api/workers/verify")) return new Response(null, { status: 401 });
+      return new Response(JSON.stringify({
+        workerId: "amigo-3-freshidentity",
+        workerToken: `bncw_${"b".repeat(43)}`
+      }), { status: 201, headers: { "content-type": "application/json" } });
+    });
+    const store = createDashboardConfigStore(envFile, {}, {
+      detector: async () => ({ capabilities: [], envUpdates: { WORKER_CAPABILITIES: "" }, services: [] }),
+      fetcher
+    });
+    try {
+      expect(await store.ensureWorkerIdentity()).toEqual({ workerId: "amigo-3-freshidentity", workerTokenSet: true });
+      expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+        "https://network.example/api/workers/verify",
+        "https://network.example/api/workers/enroll"
+      ]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects unsafe coordinator URLs before sending a saved worker token", async () => {
+    for (const coordinatorUrl of [
+      "http://network.example",
+      "https://user:pass@network.example",
+      "https://network.example?redirect=evil",
+      "https://network.example/#fragment",
+      "https://network.example?",
+      "https://network.example/#"
+    ]) {
+      const dir = await mkdtemp(join(tmpdir(), "worker-relay-insecure-coordinator-"));
+      const envFile = join(dir, ".env");
+      await writeFile(envFile, `COORDINATOR_URL=${coordinatorUrl}\nWORKER_NAME=Amigo 3\nWORKER_ID=old-worker-id\nWORKER_ACCESS_TOKEN=bncw_${"x".repeat(43)}\n`, "utf8");
+      const fetcher = vi.fn();
+      const store = createDashboardConfigStore(envFile, {}, {
+        detector: async () => ({ capabilities: [], envUpdates: { WORKER_CAPABILITIES: "" }, services: [] }),
+        fetcher
+      });
+      try {
+        await expect(store.ensureWorkerIdentity()).rejects.toThrow("Coordinator URL");
+        expect(fetcher).not.toHaveBeenCalled();
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it("never combines a partial file identity with a stale process identity", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "worker-relay-identity-source-"));
+    const envFile = join(dir, ".env");
+    await writeFile(envFile, "COORDINATOR_URL=https://network.example\nWORKER_NAME=Amigo 3\nWORKER_ID=file-worker-id\n", "utf8");
+    const fetcher = vi.fn(async (url: string) => {
+      expect(url).toBe("https://network.example/api/workers/enroll");
+      return new Response(JSON.stringify({ workerId: "fresh-worker-id", workerToken: `bncw_${"b".repeat(43)}` }), {
+        status: 201, headers: { "content-type": "application/json" }
+      });
+    });
+    const store = createDashboardConfigStore(envFile, {
+      WORKER_ID: "stale-process-id", WORKER_ACCESS_TOKEN: `bncw_${"x".repeat(43)}`
+    }, {
+      detector: async () => ({ capabilities: [], envUpdates: { WORKER_CAPABILITIES: "" }, services: [] }), fetcher
+    });
+    try {
+      expect(await store.ensureWorkerIdentity()).toEqual({ workerId: "fresh-worker-id", workerTokenSet: true });
+      expect(fetcher).toHaveBeenCalledOnce();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not rewrite configuration while enrollment is still pending", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "worker-relay-pending-enrollment-"));
+    const envFile = join(dir, ".env");
+    const original = "COORDINATOR_URL=https://network.example\nWORKER_NAME=Amigo 3\nWORKER_ID=\nWORKER_ACCESS_TOKEN=\n";
+    await writeFile(envFile, original, "utf8");
+    const store = createDashboardConfigStore(envFile, {}, {
+      detector: async () => ({ capabilities: [], envUpdates: { WORKER_CAPABILITIES: "" }, services: [] })
+    });
+    try {
+      expect((await store.summary({ persistDetection: false })).workerId).toBe("");
+      expect(await readFile(envFile, "utf8")).toBe(original);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("exposes protected Codex sign-in controls to the local dashboard", async () => {
     const runtime = new WorkerRuntime({
       workerId: "worker-local",
@@ -110,6 +283,33 @@ describe("local dashboard server", () => {
       const accepted = await fetch(`${address}/api/codex/login`, { method: "POST", headers: { "x-dashboard-token": server.token, origin: address } });
       expect(accepted.status).toBe(202);
       expect(startLogin).toHaveBeenCalledOnce();
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("does not return arbitrary internal error messages through the dashboard API", async () => {
+    const runtime = new WorkerRuntime({
+      workerId: "worker-local", configuredCapabilities: ["text.ollama"], initialCapabilities: ["text.ollama"],
+      acceptPublicRequests: false, cycle: async () => "idle"
+    });
+    const server = await buildDashboardServer({
+      runtime,
+      publicDir: join(root, "public"),
+      configStore: {
+        summary: async () => ({ workerId: "worker-local" } as never),
+        save: async () => { throw new Error(`internal-${"secret".repeat(100)}`); }
+      }
+    });
+    const address = await server.listen(0, "127.0.0.1");
+    try {
+      const response = await fetch(`${address}/api/config`, {
+        method: "POST",
+        headers: { "x-dashboard-token": server.token, origin: address, "content-type": "application/json" },
+        body: JSON.stringify({ workerName: "safe" })
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: "invalid_request" });
     } finally {
       await server.close();
     }
@@ -149,7 +349,7 @@ describe("local dashboard server", () => {
   it("lets the dashboard save local configuration while redacting credential values", async () => {
     const dir = await mkdtemp(join(tmpdir(), "worker-relay-config-"));
     const envFile = join(dir, ".env");
-    await writeFile(envFile, "COORDINATOR_URL=https://api-production-cc9f.up.railway.app\nWORKER_ACCESS_TOKEN=\nWORKER_NAME=friend-worker-1\nWORKER_CAPABILITIES=text.ollama\nACCEPT_PUBLIC_REQUESTS=false\nSUBSCRIPTION_CLI_ENABLED=false\nCODEX_COMMAND=codex\nOPENAI_API_KEY=\n", "utf8");
+    await writeFile(envFile, `COORDINATOR_URL=https://api-production-cc9f.up.railway.app\nWORKER_ID=auto-worker-id\nWORKER_ACCESS_TOKEN=bncw_${"z".repeat(43)}\nWORKER_NAME=Friendly worker\nWORKER_CAPABILITIES=text.ollama\nACCEPT_PUBLIC_REQUESTS=false\nSUBSCRIPTION_CLI_ENABLED=false\nCODEX_COMMAND=codex\nOPENAI_API_KEY=\n`, "utf8");
     const runtime = new WorkerRuntime({
       workerId: "friend-worker-1",
       configuredCapabilities: ["text.ollama"],
@@ -169,7 +369,7 @@ describe("local dashboard server", () => {
       configStore: store,
       onConfigSaved: (summary) => {
         runtime.reconfigure({
-          workerId: summary.workerName,
+          workerId: summary.workerId,
           configuredCapabilities: summary.workerCapabilities,
           activeCapabilities: summary.workerCapabilities,
           acceptPublicRequests: summary.acceptPublicRequests
@@ -182,12 +382,11 @@ describe("local dashboard server", () => {
         method: "POST",
         headers: { "content-type": "application/json", "x-dashboard-token": server.token, origin: address },
         body: JSON.stringify({
-          workerAccessToken: "secret-worker-token-1234567890",
           workerName: "nacho-wsl-worker",
           subscriptionCliEnabled: true,
-          codexCommand: "/home/nachete/.hermes/node/bin/codex",
+          codexCommand: "/home/operator/.hermes/node/bin/codex",
           codexModel: "gpt-5.1-codex",
-          openaiApiKey: "sk-test-secret",
+          openaiApiKey: "test-openai-placeholder",
           acceptPublicRequests: true
         })
       }).then((response) => response.json());
@@ -195,11 +394,11 @@ describe("local dashboard server", () => {
       expect(saved.workerAccessTokenSet).toBe(true);
       expect(saved.openaiApiKeySet).toBe(true);
       expect(JSON.stringify(saved)).not.toContain("secret-worker-token");
-      expect(JSON.stringify(saved)).not.toContain("sk-test-secret");
-      expect(runtime.snapshot()).toMatchObject({ workerId: "nacho-wsl-worker", acceptPublicRequests: true });
+      expect(JSON.stringify(saved)).not.toContain("test-openai-placeholder");
+      expect(runtime.snapshot()).toMatchObject({ workerId: "auto-worker-id", acceptPublicRequests: true });
       expect(runtime.snapshot().activeCapabilities).toEqual(["text.openai.codex"]);
       const written = await readFile(envFile, "utf8");
-      expect(written).toContain("WORKER_ACCESS_TOKEN=secret-worker-token-1234567890");
+      expect(written).toContain(`WORKER_ACCESS_TOKEN=bncw_${"z".repeat(43)}`);
       expect(written).toContain("WORKER_CAPABILITIES=text.openai.codex");
       expect(written).toContain("SUBSCRIPTION_CLI_ENABLED=true");
     } finally {
@@ -282,6 +481,8 @@ describe("local dashboard server", () => {
     expect(html).toContain('id="jobs-table"');
     expect(html).toContain('id="codex-login"');
     expect(html).toContain('id="codex-auth-status"');
+    expect(html).toContain('id="cfg-worker-id"');
+    expect(html).not.toContain('id="cfg-worker-token"');
     expect(css).toContain("--hermes-bg");
     expect(source).not.toContain("innerHTML");
     expect(source).not.toContain("localStorage");
