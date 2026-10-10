@@ -6,7 +6,7 @@ export interface ServiceDefinition {
   kind: ServiceKind;
   provider: "Local" | "OpenAI" | "Anthropic" | "DeepSeek" | "Higgsfield";
   description: string;
-  executor: "ollama" | "openai" | "anthropic" | "deepseek" | "higgsfield" | "codex-cli" | "claude-code-cli";
+  executor: "ollama" | "openai" | "anthropic" | "deepseek" | "higgsfield" | "codex-cli";
   modelId?: string;
   configurableModel?: string;
 }
@@ -57,17 +57,8 @@ const services = [
     provider: "Anthropic",
     description: "Fast conversational model through the Anthropic Messages API.",
     executor: "anthropic",
-    modelId: "claude-fable-4-6",
+    modelId: "claude-fable-5",
     configurableModel: "ANTHROPIC_FABLE_MODEL"
-  },
-  {
-    id: "text.anthropic.claude-code",
-    label: "Claude Code subscription",
-    kind: "text",
-    provider: "Anthropic",
-    description: "Text-only coding and reasoning through a locally authenticated Claude Code CLI and Claude plan.",
-    executor: "claude-code-cli",
-    configurableModel: "CLAUDE_CODE_MODEL"
   },
   {
     id: "text.deepseek.flash",

@@ -6,7 +6,6 @@ import { generateWithOpenAI } from "./openai-adapter.js";
 import { requireService } from "./service-catalog.js";
 import {
   assertSubscriptionCliReady,
-  generateWithClaudeCodeSubscription,
   generateWithCodexSubscription,
   type CliRunner,
   type SubscriptionProbe
@@ -14,7 +13,7 @@ import {
 
 type Env = Record<string, string | undefined>;
 type WorkerJob = { id: string; prompt: string; serviceId: string };
-type Dependencies = { codexRunner?: CliRunner; claudeCodeRunner?: CliRunner; subscriptionProbe?: SubscriptionProbe };
+type Dependencies = { codexRunner?: CliRunner; subscriptionProbe?: SubscriptionProbe };
 
 function required(env: Env, name: string): string {
   const value = env[name]?.trim();
@@ -47,22 +46,18 @@ export function buildWorkerExecutor(env: Env = process.env, dependencies: Depend
   if (capabilities.length === 0) throw new Error("WORKER_CAPABILITIES must select at least one service");
   const subscriptionEnabled = env.SUBSCRIPTION_CLI_ENABLED?.trim().toLowerCase() === "true";
   const subscriptionProbe = dependencies.subscriptionProbe ?? assertSubscriptionCliReady;
-  const checkedSubscriptionClis = new Set<string>();
+  let codexChecked = false;
 
   for (const capability of capabilities) {
     const service = requireService(capability);
     if (service.executor === "openai") required(env, "OPENAI_API_KEY");
     if (service.executor === "anthropic") required(env, "ANTHROPIC_API_KEY");
     if (service.executor === "deepseek") required(env, "DEEPSEEK_API_KEY");
-    if (service.executor === "codex-cli" || service.executor === "claude-code-cli") {
+    if (service.executor === "codex-cli") {
       if (!subscriptionEnabled) throw new Error("SUBSCRIPTION_CLI_ENABLED=true is required for subscription CLI capabilities");
-      const kind = service.executor === "codex-cli" ? "codex" : "claude-code";
-      const command = service.executor === "codex-cli"
-        ? (env.CODEX_COMMAND?.trim() || "codex")
-        : (env.CLAUDE_CODE_COMMAND?.trim() || "claude");
-      if (!checkedSubscriptionClis.has(kind)) {
-        subscriptionProbe(kind, command, env);
-        checkedSubscriptionClis.add(kind);
+      if (!codexChecked) {
+        subscriptionProbe("codex", env.CODEX_COMMAND?.trim() || "codex", env);
+        codexChecked = true;
       }
     }
     if (service.executor === "higgsfield") {
@@ -112,14 +107,6 @@ export function buildWorkerExecutor(env: Env = process.env, dependencies: Depend
           prompt: job.prompt,
           sourceEnv: env,
           runner: dependencies.codexRunner
-        });
-      case "claude-code-cli":
-        return generateWithClaudeCodeSubscription({
-          command: env.CLAUDE_CODE_COMMAND?.trim() || "claude",
-          model: env.CLAUDE_CODE_MODEL?.trim(),
-          prompt: job.prompt,
-          sourceEnv: env,
-          runner: dependencies.claudeCodeRunner
         });
       case "higgsfield": {
         const modelId = job.serviceId === "video.higgsfield.genjutsu"

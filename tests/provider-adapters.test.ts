@@ -4,7 +4,7 @@ import { generateWithDeepSeek } from "../src/deepseek-adapter.js";
 import { generateWithHiggsfield } from "../src/higgsfield-adapter.js";
 import { generateWithOpenAI } from "../src/openai-adapter.js";
 import { buildWorkerExecutor } from "../src/provider-registry.js";
-import { generateWithClaudeCodeSubscription, generateWithCodexSubscription, subscriptionCliIsLoggedIn } from "../src/subscription-cli-adapter.js";
+import { generateWithCodexSubscription, subscriptionCliIsLoggedIn } from "../src/subscription-cli-adapter.js";
 
 describe("hosted text adapters", () => {
   it("calls the OpenAI Responses API and returns output text", async () => {
@@ -28,10 +28,10 @@ describe("hosted text adapters", () => {
   it("calls Anthropic Messages and returns Fable text", async () => {
     const fetcher = vi.fn(async (_input: URL | RequestInfo, init?: RequestInit) => {
       expect(init?.headers).toMatchObject({ "x-api-key": "anthropic-key", "anthropic-version": "2023-06-01" });
-      expect(JSON.parse(String(init?.body))).toMatchObject({ model: "claude-fable-4-6", messages: [{ role: "user", content: "dialogue" }] });
+      expect(JSON.parse(String(init?.body))).toMatchObject({ model: "claude-fable-5", messages: [{ role: "user", content: "dialogue" }] });
       return new Response(JSON.stringify({ content: [{ type: "text", text: "Fable result" }] }), { status: 200 });
     });
-    await expect(generateWithAnthropic({ apiKey: "anthropic-key", model: "claude-fable-4-6", prompt: "dialogue", fetcher })).resolves.toBe("Fable result");
+    await expect(generateWithAnthropic({ apiKey: "anthropic-key", model: "claude-fable-5", prompt: "dialogue", fetcher })).resolves.toBe("Fable result");
   });
 
   it("calls DeepSeek Chat Completions and returns model text", async () => {
@@ -81,27 +81,6 @@ describe("subscription CLI adapters", () => {
       runner
     })).resolves.toBe("Codex subscription result");
   });
-
-  it("runs Claude Code without tools and parses its JSON result", async () => {
-    const runner = vi.fn(async (input: { command: string; args: string[]; env: NodeJS.ProcessEnv; stdin: string }) => {
-      expect(input.command).toBe("claude-test");
-      expect(input.args).toEqual(expect.arrayContaining([
-        "--print", "--output-format", "json", "--max-turns", "1", "--no-session-persistence",
-        "--safe-mode", "--restricted", "--strict-mcp-config", "--tools", ""
-      ]));
-      expect(input.args).not.toContain("explain this code");
-      expect(input.stdin).toContain("explain this code");
-      expect(input.env.WORKER_ACCESS_TOKEN).toBeUndefined();
-      expect(input.env.ANTHROPIC_API_KEY).toBeUndefined();
-      return JSON.stringify({ type: "result", subtype: "success", result: "Claude subscription result" });
-    });
-    await expect(generateWithClaudeCodeSubscription({
-      command: "claude-test",
-      prompt: "explain this code",
-      sourceEnv: { PATH: "test-path", HOME: "test-home", WORKER_ACCESS_TOKEN: "secret", ANTHROPIC_API_KEY: "secret" },
-      runner
-    })).resolves.toBe("Claude subscription result");
-  });
 });
 
 describe("worker provider registry", () => {
@@ -123,13 +102,16 @@ describe("worker provider registry", () => {
     expect(() => buildWorkerExecutor({ WORKER_CAPABILITIES: "text.openai.codex" })).toThrow("SUBSCRIPTION_CLI_ENABLED=true is required");
     const probe = vi.fn();
     const worker = buildWorkerExecutor({
-      WORKER_CAPABILITIES: "text.openai.codex,text.anthropic.claude-code",
+      WORKER_CAPABILITIES: "text.openai.codex",
       SUBSCRIPTION_CLI_ENABLED: "true",
-      CODEX_COMMAND: "codex-test",
-      CLAUDE_CODE_COMMAND: "claude-test"
+      CODEX_COMMAND: "codex-test"
     }, { subscriptionProbe: probe });
+    expect(probe).toHaveBeenCalledOnce();
     expect(probe).toHaveBeenCalledWith("codex", "codex-test", expect.any(Object));
-    expect(probe).toHaveBeenCalledWith("claude-code", "claude-test", expect.any(Object));
-    expect(worker.capabilities).toEqual(["text.openai.codex", "text.anthropic.claude-code"]);
+    expect(worker.capabilities).toEqual(["text.openai.codex"]);
+  });
+
+  it("rejects the retired Claude Code subscription capability", () => {
+    expect(() => buildWorkerExecutor({ WORKER_CAPABILITIES: "text.anthropic.claude-code" })).toThrow("unsupported service");
   });
 });

@@ -13,13 +13,13 @@ export type CliRunInput = {
 };
 
 export type CliRunner = (input: CliRunInput) => Promise<string>;
-export type SubscriptionCli = "codex" | "claude-code";
+export type SubscriptionCli = "codex";
 export type SubscriptionProbe = (kind: SubscriptionCli, command: string, env: NodeJS.ProcessEnv) => void;
 
 const ENV_ALLOWLIST = [
   "PATH", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "SYSTEMROOT", "SystemRoot",
   "COMSPEC", "ComSpec", "PATHEXT", "TEMP", "TMP", "TERM", "LANG", "LC_ALL", "XDG_CONFIG_HOME",
-  "XDG_DATA_HOME", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "SSL_CERT_FILE", "SSL_CERT_DIR", "HTTPS_PROXY",
+  "XDG_DATA_HOME", "CODEX_HOME", "SSL_CERT_FILE", "SSL_CERT_DIR", "HTTPS_PROXY",
   "HTTP_PROXY", "NO_PROXY"
 ] as const;
 
@@ -109,20 +109,6 @@ function parseCodexOutput(stdout: string): string {
   return finalMessage;
 }
 
-function parseClaudeOutput(stdout: string): string {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(stdout);
-  } catch {
-    throw new Error("Claude Code returned invalid JSON");
-  }
-  if (!parsed || typeof parsed !== "object") throw new Error("Claude Code returned an invalid result");
-  const result = parsed as { subtype?: string; result?: string; error?: string };
-  if (result.subtype && result.subtype !== "success") throw new Error(`Claude Code failed: ${result.error || result.subtype}`);
-  if (!result.result?.trim()) throw new Error("Claude Code completed without a text response");
-  return result.result.trim();
-}
-
 async function withIsolatedDirectory<T>(fn: (cwd: string) => Promise<T>): Promise<T> {
   const cwd = await mkdtemp(join(tmpdir(), "worker-relay-subscription-"));
   try {
@@ -164,57 +150,17 @@ export async function generateWithCodexSubscription(input: {
   });
 }
 
-export async function generateWithClaudeCodeSubscription(input: {
-  prompt: string;
-  command?: string;
-  model?: string;
-  timeoutMs?: number;
-  sourceEnv?: NodeJS.ProcessEnv;
-  runner?: CliRunner;
-}): Promise<string> {
-  return withIsolatedDirectory(async (cwd) => {
-    const args = [
-      "--print", "--output-format", "json", "--max-turns", "1", "--no-session-persistence",
-      "--safe-mode", "--restricted", "--strict-mcp-config", "--permission-mode", "dontAsk",
-      "--permission-prompts", "none", "--disable-slash-commands", "--tools", "",
-      ...(input.model?.trim() ? ["--model", input.model.trim()] : [])
-    ];
-    const stdout = await (input.runner ?? defaultRunner)({
-      command: input.command ?? "claude",
-      args,
-      cwd,
-      env: subscriptionCliEnvironment(input.sourceEnv),
-      stdin: textOnlyPrompt(input.prompt),
-      timeoutMs: input.timeoutMs ?? 10 * 60_000
-    });
-    return parseClaudeOutput(stdout);
-  });
-}
-
 export function subscriptionCliIsLoggedIn(kind: SubscriptionCli, stdout: string, stderr: string): boolean {
-  if (kind === "codex") return `${stdout}\n${stderr}`.includes("Logged in using ChatGPT");
-  try {
-    const status = JSON.parse(stdout || stderr) as { loggedIn?: boolean };
-    return status.loggedIn === true;
-  } catch {
-    return false;
-  }
+  return kind === "codex" && `${stdout}\n${stderr}`.includes("Logged in using ChatGPT");
 }
 
 export const assertSubscriptionCliReady: SubscriptionProbe = (kind, command, sourceEnv) => {
   const env = subscriptionCliEnvironment(sourceEnv);
-  const args = kind === "codex" ? ["login", "status"] : ["auth", "status", "--json"];
-  const result = spawnSync(command, args, { env, shell: false, windowsHide: true, encoding: "utf8", timeout: 30_000 });
+  const result = spawnSync(command, ["login", "status"], { env, shell: false, windowsHide: true, encoding: "utf8", timeout: 30_000 });
   if (result.error) throw new Error(`${kind} CLI is unavailable: ${result.error.message}`);
   const stdout = String(result.stdout || "");
   const stderr = String(result.stderr || "");
-  if (kind === "codex") {
-    if (result.status !== 0 || !subscriptionCliIsLoggedIn(kind, stdout, stderr)) {
-      throw new Error("Codex must be logged in with a ChatGPT subscription before enabling text.openai.codex");
-    }
-    return;
-  }
   if (result.status !== 0 || !subscriptionCliIsLoggedIn(kind, stdout, stderr)) {
-    throw new Error("Claude Code must be logged in with Claude Pro or Max before enabling text.anthropic.claude-code");
+    throw new Error("Codex must be logged in with a ChatGPT subscription before enabling text.openai.codex");
   }
 };

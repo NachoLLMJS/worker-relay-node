@@ -53,7 +53,6 @@ Text and chat:
 - `text.openai.sol` — OpenAI Sol.
 - `text.openai.codex` — Codex CLI using the operator's local ChatGPT subscription login.
 - `text.anthropic.fable` — Claude Fable through Anthropic Messages API.
-- `text.anthropic.claude-code` — Claude Code CLI using the operator's local Claude subscription login.
 - `text.deepseek.flash` — DeepSeek Flash through the official DeepSeek Chat API.
 - `text.deepseek.v4-pro` — DeepSeek V4 Pro through the official DeepSeek Chat API.
 
@@ -76,7 +75,7 @@ Example capability list:
 WORKER_CAPABILITIES=text.ollama,text.openai.sol,text.anthropic.fable,text.deepseek.flash,video.higgsfield.seedance-2.5
 ```
 
-The node never enables a hosted provider automatically. Every capability must be explicitly listed. API-backed jobs can consume provider credits, while Codex and Claude Code jobs consume the locally authenticated plan's allowance. Provider terms, plan limits, and eligibility remain the worker operator's responsibility.
+The node never enables a hosted provider automatically. Every capability must be explicitly listed. API-backed jobs can consume provider credits, while Codex jobs consume the locally authenticated ChatGPT plan's allowance. Provider terms, plan limits, and eligibility remain the worker operator's responsibility.
 
 ## Provider setup
 
@@ -98,9 +97,7 @@ For subscription-backed text jobs, install Codex, run `codex login`, confirm `co
 
 ### Anthropic
 
-Set `ANTHROPIC_API_KEY` in `.env`. Override Fable with `ANTHROPIC_FABLE_MODEL` only when the current account uses a different exact model ID.
-
-For subscription-backed text jobs, install Claude Code, run `claude auth login`, confirm `claude auth status` shows a logged-in Claude account, set `SUBSCRIPTION_CLI_ENABLED=true`, and enable `text.anthropic.claude-code`. The adapter uses print mode, restricted mode, safe mode, no session persistence, no MCP servers, and an empty tool list.
+Set `ANTHROPIC_API_KEY` in `.env`. The default API model is `claude-fable-5`; override it with `ANTHROPIC_FABLE_MODEL` only when the current Anthropic account uses a different exact model ID. Claude consumer subscriptions and Claude Code login sessions are not used as network worker credentials.
 
 ### DeepSeek
 
@@ -131,7 +128,7 @@ Then set `HIGGSFIELD_ENABLED=true`. Genjutsu's invocation ID is discovered from 
 - No inbound port is required.
 - Never commit `.env` or paste credentials into chat, issues, screenshots, or logs.
 - Use a dedicated OS account and a machine without wallets, SSH keys, unrelated repositories, or personal files.
-- The worker executes approved adapters only. Subscription CLI prompts are text-only: requester prompts are sent through stdin, sensitive worker environment variables are removed, and code/shell/file/browser tools are disabled.
+- The worker executes approved adapters only. Codex subscription prompts are text-only: requester prompts are sent through stdin, sensitive worker environment variables are removed, and code/shell/file/browser tools are disabled. Anthropic jobs use `ANTHROPIC_API_KEY` through the Messages API.
 - Start with Ollama or one low-risk capability and expand only after a successful `--once` run.
 
 ## Development verification

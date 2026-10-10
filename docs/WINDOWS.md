@@ -29,7 +29,7 @@ ollama pull llama3.2
 ollama list
 ```
 
-For Codex subscription support, OpenAI currently recommends WSL. Install and run this worker inside the same WSL distribution, then install Codex and complete `codex login` there. Claude Code may be installed locally or in WSL; the worker and CLI must run under the same dedicated account so the local login is available.
+For Codex subscription support, OpenAI currently recommends WSL. Install and run this worker inside the same WSL distribution, then install Codex and complete `codex login` there. Anthropic capabilities require `ANTHROPIC_API_KEY`; Claude consumer subscription login is not supported.
 
 Verify the node:
 

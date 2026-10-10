@@ -47,29 +47,11 @@ The startup check requires Codex to report `Logged in using ChatGPT`. Jobs run e
 
 ## Anthropic
 
-- `ANTHROPIC_API_KEY` — required for Fable.
+- `ANTHROPIC_API_KEY` — required for Fable. Use an Anthropic Console API key; a Claude consumer subscription login is not accepted.
 - `ANTHROPIC_BASE_URL` — optional; default is the official Anthropic API origin.
-- `ANTHROPIC_FABLE_MODEL` — default `claude-fable-4-6`.
+- `ANTHROPIC_FABLE_MODEL` — default `claude-fable-5`.
 
 Capability: `text.anthropic.fable`.
-
-## Claude subscription through Claude Code
-
-- `SUBSCRIPTION_CLI_ENABLED` — must be exactly `true`.
-- `CLAUDE_CODE_COMMAND` — default `claude`.
-- `CLAUDE_CODE_MODEL` — optional model alias or exact model ID; blank uses the authenticated plan's default.
-
-Install and authenticate locally:
-
-```text
-npm install -g @anthropic-ai/claude-code
-claude auth login
-claude auth status
-```
-
-Capability: `text.anthropic.claude-code`.
-
-The worker requires a logged-in CLI. Jobs use non-interactive print mode with safe mode, restricted mode, no session persistence, no MCP servers, no permission prompts, and no tools. Anthropic account terms and plan limits remain the operator's responsibility.
 
 ## DeepSeek
 
@@ -115,11 +97,11 @@ Hosted text:
 WORKER_CAPABILITIES=text.openai.chatgpt,text.openai.sol,text.anthropic.fable,text.deepseek.flash,text.deepseek.v4-pro
 ```
 
-Subscriptions first, APIs still available separately:
+Codex subscription plus API-backed providers:
 
 ```text
 SUBSCRIPTION_CLI_ENABLED=true
-WORKER_CAPABILITIES=text.openai.codex,text.anthropic.claude-code,text.openai.chatgpt,text.anthropic.fable
+WORKER_CAPABILITIES=text.openai.codex,text.openai.chatgpt,text.anthropic.fable
 ```
 
 Image and video:
@@ -129,4 +111,4 @@ WORKER_CAPABILITIES=image.openai.gpt-image-2,image.higgsfield.nano-banana-2,vide
 HIGGSFIELD_ENABLED=true
 ```
 
-Unknown capability IDs are rejected. Missing API credentials, disabled subscription opt-in, unavailable CLIs, and missing local subscription login all fail at startup before a job is claimed.
+Unknown capability IDs are rejected. Missing API credentials, disabled Codex opt-in, an unavailable Codex CLI, and missing local ChatGPT login all fail at startup before a job is claimed.
