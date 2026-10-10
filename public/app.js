@@ -1,8 +1,10 @@
 let dashboardToken = "";
 let snapshot = null;
 let config = null;
+let codexAuth = null;
 let visualLogFloor = 0;
 let poller;
+let codexPoller;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -15,7 +17,7 @@ function clip(value, limit = 90) { const text = String(value || "").replace(/\s+
 
 async function request(path, options = {}) {
   const headers = { ...(options.headers || {}) };
-  if (options.method && options.method !== "GET") headers["x-dashboard-token"] = dashboardToken;
+  if (dashboardToken && path !== "/api/session") headers["x-dashboard-token"] = dashboardToken;
   const response = await fetch(path, { ...options, headers });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.error || `Request failed (${response.status})`);
@@ -147,6 +149,31 @@ function renderConfig() {
   setText($("#config-message"), secrets.join(" · "));
 }
 
+function renderCodexAuth() {
+  const button = $("#codex-login");
+  if (!button || !codexAuth) return;
+  setText($("#codex-auth-status"), codexAuth.message);
+  button.disabled = codexAuth.state === "ready" || codexAuth.state === "signing_in" || codexAuth.state === "unavailable";
+  setText(button, codexAuth.state === "ready" ? "Signed in" : codexAuth.state === "signing_in" ? "Waiting for sign-in…" : codexAuth.state === "unavailable" ? "Codex CLI not found" : "Sign in with ChatGPT");
+}
+
+async function refreshCodexAuth() {
+  codexAuth = await request("/api/codex/status");
+  renderCodexAuth();
+}
+
+async function startCodexLogin() {
+  codexAuth = await request("/api/codex/login", { method: "POST" });
+  renderCodexAuth();
+  clearInterval(codexPoller);
+  if (codexAuth.state === "signing_in") {
+    codexPoller = setInterval(async () => {
+      await refreshCodexAuth().catch(() => {});
+      if (codexAuth?.state !== "signing_in") clearInterval(codexPoller);
+    }, 1_500);
+  }
+}
+
 async function saveConfig() {
   const body = {
     workerName: inputValue("#cfg-worker-name"),
@@ -227,6 +254,7 @@ $$('[data-view]').forEach((button) => button.addEventListener("click", () => sho
 $$('[data-jump]').forEach((button) => button.addEventListener("click", () => showView(button.dataset.jump)));
 $("#worker-toggle").addEventListener("click", async () => { snapshot = await request(snapshot.running ? "/api/worker/stop" : "/api/worker/start", { method: "POST" }); renderStatus(); });
 $("#save-config").addEventListener("click", () => saveConfig().catch((error) => window.alert(error.message)));
+$("#codex-login").addEventListener("click", () => startCodexLogin().catch((error) => window.alert(error.message)));
 $("#public-jobs-toggle").addEventListener("change", async (event) => { config = await request("/api/config", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ acceptPublicRequests: event.target.checked }) }); await refresh(); });
 $("#models-grid").addEventListener("change", (event) => { if (event.target.matches('input[type="checkbox"]')) updateCapabilities(event.target); });
 $("#clear-terminal").addEventListener("click", () => { visualLogFloor = Math.max(0, ...(snapshot.logs || []).map((log) => log.id)); renderStatus(); });
@@ -235,7 +263,7 @@ window.addEventListener("hashchange", () => showView(location.hash.slice(1) || "
 (async () => {
   dashboardToken = (await request("/api/session")).token;
   config = await request("/api/config").catch(() => null);
-  await refresh();
+  await Promise.all([refresh(), refreshCodexAuth()]);
   renderConfig();
   showView(titles[location.hash.slice(1)] ? location.hash.slice(1) : "overview");
   poller = setInterval(() => refresh().catch(() => {}), 1_000);
@@ -243,4 +271,4 @@ window.addEventListener("hashchange", () => showView(location.hash.slice(1) || "
   const connection = $("#connection-pill"); connection.className = "connection-pill error"; setText(connection.querySelector("span"), error.message);
 });
 
-window.addEventListener("beforeunload", () => clearInterval(poller));
+window.addEventListener("beforeunload", () => { clearInterval(poller); clearInterval(codexPoller); });

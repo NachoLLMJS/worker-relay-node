@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import type { WorkerRuntime } from "./worker-runtime.js";
 import type { DashboardConfigSummary, DashboardConfigUpdate } from "./config-store.js";
+import type { CodexAuthController } from "./codex-auth.js";
 
 type DashboardConfigStore = {
   summary(): Promise<DashboardConfigSummary>;
@@ -38,7 +39,15 @@ function safeHost(request: IncomingMessage): boolean {
   return host === "127.0.0.1" || host === "localhost" || host === "::1";
 }
 
-export async function buildDashboardServer(options: { runtime: WorkerRuntime; publicDir: string; configStore?: DashboardConfigStore; onConfigSaved?: (summary: DashboardConfigSummary) => void }) {
+function safeMutationOrigin(request: IncomingMessage): boolean {
+  const fetchSite = request.headers["sec-fetch-site"];
+  if (fetchSite && fetchSite !== "same-origin" && fetchSite !== "none") return false;
+  const origin = request.headers.origin;
+  if (origin) return origin === `http://${request.headers.host}`;
+  return fetchSite === "same-origin" || fetchSite === "none";
+}
+
+export async function buildDashboardServer(options: { runtime: WorkerRuntime; publicDir: string; configStore?: DashboardConfigStore; codexAuth?: CodexAuthController; onConfigSaved?: (summary: DashboardConfigSummary) => void }) {
   const token = randomBytes(32).toString("base64url");
   const server = createServer(async (request, reply) => {
     reply.setHeader("x-content-type-options", "nosniff");
@@ -51,12 +60,18 @@ export async function buildDashboardServer(options: { runtime: WorkerRuntime; pu
 
     if (request.method === "GET" && url.pathname === "/api/session") return writeJson(reply, 200, { token });
     if (request.method === "GET" && url.pathname === "/api/status") return writeJson(reply, 200, options.runtime.snapshot());
+    if (request.method === "GET" && url.pathname === "/api/codex/status") {
+      if (request.headers["x-dashboard-token"] !== token) return writeJson(reply, 403, { error: "forbidden" });
+      if (!options.codexAuth) return writeJson(reply, 404, { error: "not_found" });
+      return writeJson(reply, 200, options.codexAuth.status());
+    }
     if (request.method === "GET" && url.pathname === "/api/config") {
       if (!options.configStore) return writeJson(reply, 404, { error: "not_found" });
       return writeJson(reply, 200, await options.configStore.summary());
     }
 
     if (request.method === "POST" && url.pathname.startsWith("/api/")) {
+      if (!safeMutationOrigin(request)) return writeJson(reply, 403, { error: "forbidden_origin" });
       if (request.headers["x-dashboard-token"] !== token) return writeJson(reply, 403, { error: "forbidden" });
       try {
         if (url.pathname === "/api/config") {
@@ -64,6 +79,10 @@ export async function buildDashboardServer(options: { runtime: WorkerRuntime; pu
           const summary = await options.configStore.save(await readJson(request) as DashboardConfigUpdate);
           options.onConfigSaved?.(summary);
           return writeJson(reply, 200, summary);
+        }
+        if (url.pathname === "/api/codex/login") {
+          if (!options.codexAuth) return writeJson(reply, 404, { error: "not_found" });
+          return writeJson(reply, 202, options.codexAuth.startLogin());
         }
         if (url.pathname === "/api/worker/start") options.runtime.start();
         else if (url.pathname === "/api/worker/stop") options.runtime.stop();

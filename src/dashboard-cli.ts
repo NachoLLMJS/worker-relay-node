@@ -8,6 +8,7 @@ import { createDashboardConfigStore, type DashboardConfigSummary } from "./confi
 import { buildWorkerExecutor } from "./provider-registry.js";
 import { runWorkerOnce } from "./worker.js";
 import { WorkerRuntime } from "./worker-runtime.js";
+import { createCodexAuthController } from "./codex-auth.js";
 
 function openBrowser(url: string): void {
   if (process.env.DASHBOARD_AUTO_OPEN?.trim().toLowerCase() === "false" || process.argv.includes("--no-open")) return;
@@ -75,6 +76,7 @@ const dashboard = await buildDashboardServer({
   runtime,
   publicDir: resolve(process.cwd(), "public"),
   configStore,
+  codexAuth: createCodexAuthController(),
   onConfigSaved: applySummary.bind(null, runtime)
 });
 const port = Number(process.env.DASHBOARD_PORT || 4317);

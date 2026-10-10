@@ -51,6 +51,43 @@ describe("local worker runtime", () => {
 });
 
 describe("local dashboard server", () => {
+  it("exposes protected Codex sign-in controls to the local dashboard", async () => {
+    const runtime = new WorkerRuntime({
+      workerId: "worker-local",
+      configuredCapabilities: ["text.ollama"],
+      initialCapabilities: ["text.ollama"],
+      acceptPublicRequests: false,
+      cycle: async () => "idle"
+    });
+    const startLogin = vi.fn(() => ({ state: "signing_in" as const, message: "Browser sign-in started" }));
+    const options = {
+      runtime,
+      publicDir: join(root, "public"),
+      codexAuth: {
+        status: () => ({ state: "signed_out" as const, message: "Sign in required" }),
+        startLogin
+      }
+    } as Parameters<typeof buildDashboardServer>[0];
+    const server = await buildDashboardServer(options);
+    const address = await server.listen(0, "127.0.0.1");
+    try {
+      const rejectedStatus = await fetch(`${address}/api/codex/status`);
+      expect(rejectedStatus.status).toBe(403);
+      const status = await fetch(`${address}/api/codex/status`, { headers: { "x-dashboard-token": server.token } }).then((response) => response.json());
+      expect(status).toEqual({ state: "signed_out", message: "Sign in required" });
+
+      const rejected = await fetch(`${address}/api/codex/login`, { method: "POST" });
+      expect(rejected.status).toBe(403);
+      const crossSite = await fetch(`${address}/api/codex/login`, { method: "POST", headers: { "x-dashboard-token": server.token, origin: "https://evil.example", "sec-fetch-site": "cross-site" } });
+      expect(crossSite.status).toBe(403);
+      const accepted = await fetch(`${address}/api/codex/login`, { method: "POST", headers: { "x-dashboard-token": server.token, origin: address } });
+      expect(accepted.status).toBe(202);
+      expect(startLogin).toHaveBeenCalledOnce();
+    } finally {
+      await server.close();
+    }
+  });
+
   it("serves the Hermes-style control surface on loopback and protects state-changing routes", async () => {
     const runtime = new WorkerRuntime({
       workerId: "worker-local",
@@ -74,7 +111,7 @@ describe("local dashboard server", () => {
 
       const rejected = await fetch(`${address}/api/worker/start`, { method: "POST" });
       expect(rejected.status).toBe(403);
-      const accepted = await fetch(`${address}/api/worker/start`, { method: "POST", headers: { "x-dashboard-token": server.token } });
+      const accepted = await fetch(`${address}/api/worker/start`, { method: "POST", headers: { "x-dashboard-token": server.token, origin: address } });
       expect(accepted.status).toBe(200);
       runtime.stop();
     } finally {
@@ -111,7 +148,7 @@ describe("local dashboard server", () => {
     try {
       const saved = await fetch(`${address}/api/config`, {
         method: "POST",
-        headers: { "content-type": "application/json", "x-dashboard-token": server.token },
+        headers: { "content-type": "application/json", "x-dashboard-token": server.token, origin: address },
         body: JSON.stringify({
           workerAccessToken: "secret-worker-token-1234567890",
           workerName: "nacho-wsl-worker",
@@ -177,12 +214,15 @@ describe("local dashboard server", () => {
     expect(html).toContain('id="terminal-feed"');
     expect(html).toContain('id="models-grid"');
     expect(html).toContain('id="jobs-table"');
+    expect(html).toContain('id="codex-login"');
+    expect(html).toContain('id="codex-auth-status"');
     expect(css).toContain("--hermes-bg");
     expect(source).not.toContain("innerHTML");
     expect(source).not.toContain("localStorage");
     expect(source).not.toContain("ethereum.request");
     expect(source).not.toContain('request("/api/worker/capabilities"');
     expect(source).not.toContain('request("/api/worker/public-requests"');
+    expect(source).toContain('request("/api/codex/login"');
     const renderStatusBody = source.slice(source.indexOf("function renderStatus"), source.indexOf("async function refresh"));
     expect(renderStatusBody).not.toContain("renderConfig();");
   });
