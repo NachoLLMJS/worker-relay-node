@@ -43,6 +43,29 @@ describe("Codex dashboard authentication", () => {
     expect(controller.status().state).toBe("signing_in");
   });
 
+  it("logs out and starts a fresh ChatGPT sign-in without exposing worker secrets", () => {
+    const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter };
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    const runSync = vi.fn((_command: string, args: string[]) => args[0] === "logout"
+      ? { status: 0, stdout: "", stderr: "" }
+      : { status: 1, stdout: "", stderr: "Not logged in" });
+    const launch = vi.fn(() => child as never);
+    const controller = createCodexAuthController({
+      command: () => "codex-test",
+      env: () => ({ PATH: "test-path", WORKER_ACCESS_TOKEN: "secret" }),
+      runSync,
+      launch
+    });
+
+    expect(controller.startRelogin()).toEqual({ state: "signing_in", message: "A ChatGPT sign-in page was opened in your browser." });
+    expect(runSync).toHaveBeenCalledWith("codex-test", ["logout"], expect.objectContaining({
+      shell: false,
+      env: expect.not.objectContaining({ WORKER_ACCESS_TOKEN: expect.anything() })
+    }));
+    expect(launch).toHaveBeenCalledWith("codex-test", ["login"], expect.objectContaining({ shell: false }));
+  });
+
   it("recovers when the login process cannot be launched", () => {
     const controller = createCodexAuthController({
       command: () => "codex-test",

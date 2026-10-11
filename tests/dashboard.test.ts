@@ -260,12 +260,14 @@ describe("local dashboard server", () => {
       cycle: async () => "idle"
     });
     const startLogin = vi.fn(() => ({ state: "signing_in" as const, message: "Browser sign-in started" }));
+    const startRelogin = vi.fn(() => ({ state: "signing_in" as const, message: "Fresh browser sign-in started" }));
     const options = {
       runtime,
       publicDir: join(root, "public"),
       codexAuth: {
         status: () => ({ state: "signed_out" as const, message: "Sign in required" }),
-        startLogin
+        startLogin,
+        startRelogin
       }
     } as Parameters<typeof buildDashboardServer>[0];
     const server = await buildDashboardServer(options);
@@ -283,6 +285,10 @@ describe("local dashboard server", () => {
       const accepted = await fetch(`${address}/api/codex/login`, { method: "POST", headers: { "x-dashboard-token": server.token, origin: address } });
       expect(accepted.status).toBe(202);
       expect(startLogin).toHaveBeenCalledOnce();
+
+      const relogin = await fetch(`${address}/api/codex/relogin`, { method: "POST", headers: { "x-dashboard-token": server.token, origin: address } });
+      expect(relogin.status).toBe(202);
+      expect(startRelogin).toHaveBeenCalledOnce();
     } finally {
       await server.close();
     }
@@ -480,6 +486,7 @@ describe("local dashboard server", () => {
     expect(html).toContain('id="models-grid"');
     expect(html).toContain('id="jobs-table"');
     expect(html).toContain('id="codex-login"');
+    expect(html).toContain("Relogin with ChatGPT");
     expect(html).toContain('id="codex-auth-status"');
     expect(html).toContain('id="cfg-worker-id"');
     expect(html).not.toContain('id="cfg-worker-token"');
@@ -493,6 +500,7 @@ describe("local dashboard server", () => {
     expect(source).not.toContain('updateCapabilities');
     expect(source).not.toContain('request("/api/worker/public-requests"');
     expect(source).toContain('request("/api/codex/login"');
+    expect(source).toContain('request("/api/codex/relogin"');
     const renderStatusBody = source.slice(source.indexOf("function renderStatus"), source.indexOf("async function refresh"));
     expect(renderStatusBody).not.toContain("renderConfig();");
   });

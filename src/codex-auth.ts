@@ -128,7 +128,37 @@ export function createCodexAuthController(options: {
     return { state: "signing_in", message: "A ChatGPT sign-in page was opened in your browser." };
   }
 
-  return { status, startLogin };
+  function logout(): CodexAuthStatus {
+    if (loginInProgress) throw new Error("Wait for the current Codex sign-in to finish before switching accounts.");
+    let result: ReturnType<RunSync>;
+    try {
+      const env = subscriptionCliEnvironment(sourceEnv());
+      const invocation = resolveSubscriptionCliInvocation(command(), env);
+      result = runSync(invocation.command, [...invocation.argsPrefix, "logout"], {
+        env,
+        shell: false,
+        windowsHide: true,
+        encoding: "utf8",
+        timeout: 30_000
+      });
+    } catch {
+      lastError = "Codex sign-out failed. Close the dashboard and try again.";
+      throw new Error(lastError);
+    }
+    if (result.error || result.status !== 0) {
+      lastError = "Codex sign-out failed. Close the dashboard and try again.";
+      throw new Error(lastError);
+    }
+    lastError = "";
+    return { state: "signed_out", message: "Signed out from ChatGPT on this worker." };
+  }
+
+  function startRelogin(): CodexAuthStatus {
+    logout();
+    return startLogin();
+  }
+
+  return { status, startLogin, startRelogin };
 }
 
 export type CodexAuthController = ReturnType<typeof createCodexAuthController>;

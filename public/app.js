@@ -152,11 +152,28 @@ function renderConfig() {
 }
 
 function renderCodexAuth() {
-  const button = $("#codex-login");
-  if (!button || !codexAuth) return;
-  setText($("#codex-auth-status"), codexAuth.message);
-  button.disabled = codexAuth.state === "ready" || codexAuth.state === "signing_in" || codexAuth.state === "unavailable";
-  setText(button, codexAuth.state === "ready" ? "Signed in" : codexAuth.state === "signing_in" ? "Waiting for sign-in…" : codexAuth.state === "unavailable" ? "Codex CLI not found" : "Sign in with ChatGPT");
+  const loginButton = $("#codex-login");
+  const reloginButton = $("#codex-relogin");
+  if (!loginButton || !reloginButton || !codexAuth) return;
+  const rateLimited = codexAuth.state === "ready" && (snapshot?.logs || []).some((record) => record.message?.includes("kind=rate_limited"));
+  setText($("#codex-auth-status"), rateLimited
+    ? "The current ChatGPT/Codex account is rate limited. Wait for reset or relogin with another account."
+    : codexAuth.message);
+  loginButton.hidden = codexAuth.state === "ready";
+  loginButton.disabled = codexAuth.state === "signing_in" || codexAuth.state === "unavailable";
+  setText(loginButton, codexAuth.state === "signing_in" ? "Waiting for sign-in…" : codexAuth.state === "unavailable" ? "Codex CLI not found" : "Sign in with ChatGPT");
+  reloginButton.hidden = codexAuth.state !== "ready";
+  reloginButton.disabled = codexAuth.state === "signing_in" || codexAuth.state === "unavailable";
+}
+
+function pollCodexLogin() {
+  clearInterval(codexPoller);
+  if (codexAuth.state === "signing_in") {
+    codexPoller = setInterval(async () => {
+      await refreshCodexAuth().catch(() => {});
+      if (codexAuth?.state !== "signing_in") clearInterval(codexPoller);
+    }, 1_500);
+  }
 }
 
 async function refreshCodexAuth() {
@@ -167,13 +184,14 @@ async function refreshCodexAuth() {
 async function startCodexLogin() {
   codexAuth = await request("/api/codex/login", { method: "POST" });
   renderCodexAuth();
-  clearInterval(codexPoller);
-  if (codexAuth.state === "signing_in") {
-    codexPoller = setInterval(async () => {
-      await refreshCodexAuth().catch(() => {});
-      if (codexAuth?.state !== "signing_in") clearInterval(codexPoller);
-    }, 1_500);
-  }
+  pollCodexLogin();
+}
+
+async function startCodexRelogin() {
+  if (!window.confirm("This will sign out the current Codex ChatGPT account and start a new login flow. Continue?")) return;
+  codexAuth = await request("/api/codex/relogin", { method: "POST" });
+  renderCodexAuth();
+  pollCodexLogin();
 }
 
 async function saveConfig() {
@@ -233,6 +251,7 @@ function renderStatus() {
   renderTerminal($("#terminal-feed"), 300);
   renderModels();
   renderJobs();
+  renderCodexAuth();
 }
 
 async function refresh() {
@@ -246,6 +265,7 @@ $$('[data-jump]').forEach((button) => button.addEventListener("click", () => sho
 $("#worker-toggle").addEventListener("click", async () => { snapshot = await request(snapshot.running ? "/api/worker/stop" : "/api/worker/start", { method: "POST" }); renderStatus(); });
 $("#save-config").addEventListener("click", () => saveConfig().catch((error) => window.alert(error.message)));
 $("#codex-login").addEventListener("click", () => startCodexLogin().catch((error) => window.alert(error.message)));
+$("#codex-relogin").addEventListener("click", () => startCodexRelogin().catch((error) => window.alert(error.message)));
 $("#public-jobs-toggle").addEventListener("change", async (event) => { config = await request("/api/config", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ acceptPublicRequests: event.target.checked }) }); await refresh(); });
 
 $("#clear-terminal").addEventListener("click", () => { visualLogFloor = Math.max(0, ...(snapshot.logs || []).map((log) => log.id)); renderStatus(); });
