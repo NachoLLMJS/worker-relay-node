@@ -13,6 +13,7 @@ export type DashboardConfigSummary = {
   workerId: string;
   workerCapabilities: string[];
   acceptPublicRequests: boolean;
+  setupProvider: "chatgpt" | "api" | "local";
   workerAccessTokenSet: boolean;
   subscriptionCliEnabled: boolean;
   codexImageEnabled: boolean;
@@ -40,6 +41,7 @@ export type DashboardConfigUpdate = Partial<{
   coordinatorUrl: string;
   workerName: string;
   acceptPublicRequests: boolean;
+  setupProvider: "chatgpt" | "api" | "local";
   subscriptionCliEnabled: boolean;
   codexImageEnabled: boolean;
   codexCommand: string;
@@ -65,6 +67,7 @@ const KEY_BY_FIELD: Record<keyof DashboardConfigUpdate, string> = {
   coordinatorUrl: "COORDINATOR_URL",
   workerName: "WORKER_NAME",
   acceptPublicRequests: "ACCEPT_PUBLIC_REQUESTS",
+  setupProvider: "SETUP_PROVIDER",
   subscriptionCliEnabled: "SUBSCRIPTION_CLI_ENABLED",
   codexImageEnabled: "CODEX_IMAGE_ENABLED",
   codexCommand: "CODEX_COMMAND",
@@ -104,6 +107,11 @@ function bool(value: string | undefined): boolean {
   return value?.trim().toLowerCase() === "true";
 }
 
+function setupProvider(value: string | undefined): "chatgpt" | "api" | "local" {
+  const normalized = value?.trim().toLowerCase();
+  return normalized === "api" || normalized === "local" ? normalized : "chatgpt";
+}
+
 function stringValue(value: unknown, field: string): string {
   if (typeof value !== "string") throw new Error(`${field} must be a string`);
   const trimmed = value.trim();
@@ -120,6 +128,7 @@ function summarize(env: Env, services: DetectedService[]): DashboardConfigSummar
     workerId: env.WORKER_ID?.trim() || "",
     workerCapabilities: csv(env.WORKER_CAPABILITIES, []),
     acceptPublicRequests: bool(env.ACCEPT_PUBLIC_REQUESTS),
+    setupProvider: setupProvider(env.SETUP_PROVIDER),
     workerAccessTokenSet: Boolean(env.WORKER_ACCESS_TOKEN?.trim()),
     subscriptionCliEnabled: bool(env.SUBSCRIPTION_CLI_ENABLED),
     codexImageEnabled: bool(env.CODEX_IMAGE_ENABLED),
@@ -146,7 +155,9 @@ function summarize(env: Env, services: DetectedService[]): DashboardConfigSummar
 
 function serializeValue(value: unknown, field: keyof DashboardConfigUpdate): string {
   if (typeof value === "boolean") return value ? "true" : "false";
-  return stringValue(value, field);
+  const serialized = stringValue(value, field);
+  if (field === "setupProvider" && !["chatgpt", "api", "local"].includes(serialized)) throw new Error("setupProvider must be chatgpt, api, or local");
+  return serialized;
 }
 
 function applyUpdatesToText(text: string, updates: DashboardConfigUpdate): { text: string; env: Env } {

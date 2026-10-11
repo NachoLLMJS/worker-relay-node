@@ -5,6 +5,11 @@ let codexAuth = null;
 let visualLogFloor = 0;
 let poller;
 let codexPoller;
+let selectedSetupProvider = "chatgpt";
+let setupProviderInitialized = false;
+let configDirty = false;
+let configSaving = false;
+let publicPreferenceSaving = false;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -128,6 +133,98 @@ function setInput(id, value) { const node = $(id); if (node) node.value = value 
 function setChecked(id, value) { const node = $(id); if (node) node.checked = Boolean(value); }
 function inputValue(id) { return $(id)?.value?.trim() || ""; }
 
+function providerLabel(provider) {
+  return provider === "api" ? "API provider" : provider === "local" ? "Local model" : "ChatGPT subscription";
+}
+
+function inferSetupProvider() {
+  if (["chatgpt", "api", "local"].includes(config?.setupProvider)) return config.setupProvider;
+  if (config?.subscriptionCliEnabled || codexAuth?.state === "ready") return "chatgpt";
+  if (config?.openaiApiKeySet || config?.anthropicApiKeySet || config?.deepseekApiKeySet || config?.higgsfieldEnabled) return "api";
+  if (config?.ollamaModel) return "local";
+  return "chatgpt";
+}
+
+function selectSetupProvider(provider) {
+  selectedSetupProvider = provider;
+  $$('[data-provider-choice]').forEach((button) => {
+    const selected = button.dataset.providerChoice === provider;
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  });
+  $$('[data-provider-pane]').forEach((pane) => { pane.hidden = pane.dataset.providerPane !== provider; });
+  setText($("#activation-provider"), providerLabel(provider));
+}
+
+function setConfigSaveState(state, message = "") {
+  const node = $("#config-save-state");
+  if (!node) return;
+  node.className = `save-state ${state}`;
+  setText(node, message || (state === "dirty" ? "Unsaved changes" : state === "saving" ? "Saving…" : state === "error" ? "Not saved" : "Saved"));
+}
+
+function showConfigFeedback(message, kind = "success") {
+  const node = $("#config-feedback");
+  if (!node) return;
+  node.hidden = !message;
+  node.className = `inline-feedback ${kind}`;
+  setText(node, message);
+}
+
+function markConfigDirty() {
+  if (configSaving) return;
+  configDirty = true;
+  setConfigSaveState("dirty");
+  showConfigFeedback("");
+}
+
+function setConfigActionsDisabled(disabled) {
+  [$("#save-config"), $("#save-and-start")].forEach((button) => { if (button) button.disabled = disabled; });
+}
+
+function syncPublicRequestControls(value) {
+  setChecked("#public-jobs-toggle", value);
+  setChecked("#activation-public-jobs", value);
+}
+
+function setPublicRequestControlsDisabled(disabled) {
+  [$("#public-jobs-toggle"), $("#activation-public-jobs")].forEach((control) => { if (control) control.disabled = disabled; });
+}
+
+function renderSetupSummary() {
+  setText($("#activation-provider"), providerLabel(selectedSetupProvider));
+  const count = snapshot?.activeCapabilities?.length || 0;
+  setText($("#activation-capabilities"), count ? `${count} route${count === 1 ? "" : "s"} ready` : "No routes ready yet");
+  setText($("#openai-key-state"), config?.openaiApiKeySet ? "Saved" : "Not set");
+  setText($("#anthropic-key-state"), config?.anthropicApiKeySet ? "Saved" : "Not set");
+  setText($("#deepseek-key-state"), config?.deepseekApiKeySet ? "Saved" : "Not set");
+}
+
+function deriveOperationalStatus() {
+  if (!snapshot) return { eyebrow: "WORKER STATUS", title: "Checking readiness…", description: "Reading local providers and coordinator state.", action: "Review setup", intent: "config", tone: "neutral" };
+  if (!snapshot.workerId || snapshot.workerId === "unenrolled-worker") return { eyebrow: "IDENTITY REQUIRED", title: "Worker enrollment is not ready", description: "Review the coordinator connection before starting this worker.", action: "Review setup", intent: "config", tone: "warning" };
+  if (!snapshot.activeCapabilities.length) return { eyebrow: "SETUP REQUIRED", title: "Connect an AI provider to start", description: "No verified text, image, video, or local-model route is available yet.", action: "Connect provider", intent: "config", tone: "warning" };
+  if (!snapshot.running) return { eyebrow: "READY", title: "Ready to start", description: `${snapshot.activeCapabilities.length} verified route${snapshot.activeCapabilities.length === 1 ? " is" : "s are"} available. Public jobs are ${snapshot.acceptPublicRequests ? "authorized" : "off"}.`, action: "Start worker", intent: "start", tone: "ready" };
+  if (snapshot.busy) return { eyebrow: "ACTIVE JOB", title: "Processing a job", description: "This worker is completing the current job before accepting another one.", action: "View jobs", intent: "jobs", tone: "active" };
+  if (snapshot.failedCycles && !snapshot.connected) return { eyebrow: "RETRYING", title: "Connection lost — retrying", description: "The worker is still running and will retry automatically. Open troubleshooting for technical details.", action: "Troubleshooting", intent: "terminal", tone: "error" };
+  if (!snapshot.acceptPublicRequests) return { eyebrow: "RECEPTION PAUSED", title: "Public jobs are off", description: "The worker is running, but public network requests are not authorized on this machine.", action: "Review job sources", intent: "config", tone: "warning" };
+  if (snapshot.connected) return { eyebrow: "ONLINE", title: "Waiting for compatible jobs", description: "The coordinator is connected. This worker will claim only jobs that match its verified routes.", action: "View providers", intent: "models", tone: "ready" };
+  return { eyebrow: "CONNECTING", title: "Connecting to the coordinator", description: "Provider setup is ready. The worker is establishing its coordinator session.", action: "View details", intent: "terminal", tone: "neutral" };
+}
+
+function renderOperationalStatus() {
+  const status = deriveOperationalStatus();
+  const root = $("#operational-status");
+  if (!root) return;
+  root.className = `panel operational-card ${status.tone}`;
+  setText($("#operational-eyebrow"), status.eyebrow);
+  setText($("#operational-title"), status.title);
+  setText($("#operational-description"), status.description);
+  const action = $("#operational-action");
+  setText(action, status.action);
+  action.dataset.intent = status.intent;
+}
+
 function renderConfig() {
   if (!config) return;
   setInput("#cfg-worker-name", config.workerName);
@@ -148,8 +245,17 @@ function renderConfig() {
   setChecked("#cfg-subscription-enabled", config.subscriptionCliEnabled);
   setChecked("#cfg-codex-image-enabled", config.codexImageEnabled);
   setChecked("#cfg-higgsfield-enabled", config.higgsfieldEnabled);
+  syncPublicRequestControls(config.acceptPublicRequests);
+  if (!setupProviderInitialized) {
+    selectedSetupProvider = inferSetupProvider();
+    setupProviderInitialized = true;
+  }
+  selectSetupProvider(selectedSetupProvider);
+  renderSetupSummary();
   const secrets = [config.workerId ? `open worker enrolled: ${config.workerId}` : "worker enrollment pending", config.openaiApiKeySet ? "OpenAI key saved" : "OpenAI key missing", config.anthropicApiKeySet ? "Anthropic key saved" : "Anthropic key missing", config.deepseekApiKeySet ? "DeepSeek key saved" : "DeepSeek key missing"];
   setText($("#config-message"), secrets.join(" · "));
+  configDirty = false;
+  setConfigSaveState("saved");
 }
 
 function renderCodexAuth() {
@@ -195,11 +301,17 @@ async function startCodexRelogin() {
   pollCodexLogin();
 }
 
-async function saveConfig() {
+async function saveConfig({ startWorker = false } = {}) {
+  if (configSaving) return;
+  configSaving = true;
+  setConfigActionsDisabled(true);
+  setConfigSaveState("saving");
+  showConfigFeedback("");
   const body = {
     workerName: inputValue("#cfg-worker-name"),
     coordinatorUrl: inputValue("#cfg-coordinator-url"),
-    acceptPublicRequests: $("#public-jobs-toggle").checked,
+    acceptPublicRequests: $("#activation-public-jobs").checked,
+    setupProvider: selectedSetupProvider,
     subscriptionCliEnabled: $("#cfg-subscription-enabled").checked,
     codexImageEnabled: $("#cfg-codex-image-enabled").checked,
     codexCommand: inputValue("#cfg-codex-command"),
@@ -222,10 +334,26 @@ async function saveConfig() {
   if (openaiKey) body.openaiApiKey = openaiKey;
   if (anthropicKey) body.anthropicApiKey = anthropicKey;
   if (deepseekKey) body.deepseekApiKey = deepseekKey;
-  config = await request("/api/config", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  ["#cfg-openai-key", "#cfg-anthropic-key", "#cfg-deepseek-key"].forEach((id) => setInput(id, ""));
-  await refresh();
-  renderConfig();
+  try {
+    config = await request("/api/config", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    ["#cfg-openai-key", "#cfg-anthropic-key", "#cfg-deepseek-key"].forEach((id) => setInput(id, ""));
+    await refresh();
+    renderConfig();
+    if (startWorker && !snapshot.running) {
+      snapshot = await request("/api/worker/start", { method: "POST" });
+      renderStatus();
+      if (!snapshot.running) throw new Error("Worker did not enter the running state");
+    }
+    showConfigFeedback(startWorker ? "Worker started; provider checks continue in the background." : "Configuration saved and provider readiness refreshed.");
+  } catch (error) {
+    configDirty = true;
+    setConfigSaveState("error");
+    showConfigFeedback(error.message, "error");
+    throw error;
+  } finally {
+    configSaving = false;
+    setConfigActionsDisabled(false);
+  }
 }
 
 function renderStatus() {
@@ -240,7 +368,7 @@ function renderStatus() {
   setText($("#metric-public"), snapshot.acceptPublicRequests ? "On" : "Off");
   setText($("#metric-connection"), snapshot.connected ? "Connected" : snapshot.running ? "Connecting" : "Offline");
   setText($("#metric-contact"), snapshot.lastContactAt ? `Last contact ${formatTime(snapshot.lastContactAt)}` : "No coordinator contact");
-  $("#public-jobs-toggle").checked = snapshot.acceptPublicRequests;
+  if (!publicPreferenceSaving) syncPublicRequestControls(snapshot.acceptPublicRequests);
 
   const connection = $("#connection-pill");
   connection.className = `connection-pill${snapshot.connected ? " online" : snapshot.failedCycles ? " error" : ""}`;
@@ -254,6 +382,8 @@ function renderStatus() {
   renderModels();
   renderJobs();
   renderCodexAuth();
+  renderOperationalStatus();
+  renderSetupSummary();
 }
 
 async function refresh() {
@@ -261,14 +391,50 @@ async function refresh() {
   renderStatus();
 }
 
+async function savePublicPreference(value) {
+  if (publicPreferenceSaving) {
+    syncPublicRequestControls(snapshot?.acceptPublicRequests || false);
+    return;
+  }
+  publicPreferenceSaving = true;
+  setPublicRequestControlsDisabled(true);
+  syncPublicRequestControls(value);
+  try {
+    config = await request("/api/config", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ acceptPublicRequests: value }) });
+    snapshot = await request("/api/status");
+    syncPublicRequestControls(snapshot.acceptPublicRequests);
+    renderStatus();
+    if (configDirty) setConfigSaveState("dirty");
+    else setConfigSaveState("saved", "Public job preference saved");
+    showConfigFeedback(`Public requests ${snapshot.acceptPublicRequests ? "enabled" : "disabled"}.`, "success");
+  } catch (error) {
+    syncPublicRequestControls(snapshot?.acceptPublicRequests || false);
+    if (configDirty) setConfigSaveState("dirty");
+    else setConfigSaveState("error");
+    showConfigFeedback(error.message, "error");
+  } finally {
+    publicPreferenceSaving = false;
+    setPublicRequestControlsDisabled(false);
+  }
+}
+
 
 $$('[data-view]').forEach((button) => button.addEventListener("click", () => showView(button.dataset.view)));
 $$('[data-jump]').forEach((button) => button.addEventListener("click", () => showView(button.dataset.jump)));
+$$('[data-provider-choice]').forEach((button) => button.addEventListener("click", () => { selectSetupProvider(button.dataset.providerChoice); markConfigDirty(); }));
+$$('#view-config input:not([readonly]):not(#activation-public-jobs)').forEach((input) => input.addEventListener("input", markConfigDirty));
 $("#worker-toggle").addEventListener("click", async () => { snapshot = await request(snapshot.running ? "/api/worker/stop" : "/api/worker/start", { method: "POST" }); renderStatus(); });
-$("#save-config").addEventListener("click", () => saveConfig().catch((error) => window.alert(error.message)));
-$("#codex-login").addEventListener("click", () => startCodexLogin().catch((error) => window.alert(error.message)));
-$("#codex-relogin").addEventListener("click", () => startCodexRelogin().catch((error) => window.alert(error.message)));
-$("#public-jobs-toggle").addEventListener("change", async (event) => { config = await request("/api/config", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ acceptPublicRequests: event.target.checked }) }); await refresh(); });
+$("#operational-action").addEventListener("click", async (event) => {
+  const intent = event.currentTarget.dataset.intent;
+  if (intent === "start") { snapshot = await request("/api/worker/start", { method: "POST" }); renderStatus(); return; }
+  showView(intent || "config");
+});
+$("#save-config").addEventListener("click", () => saveConfig().catch(() => {}));
+$("#save-and-start").addEventListener("click", () => saveConfig({ startWorker: true }).catch(() => {}));
+$("#codex-login").addEventListener("click", () => startCodexLogin().catch((error) => showConfigFeedback(error.message, "error")));
+$("#codex-relogin").addEventListener("click", () => startCodexRelogin().catch((error) => showConfigFeedback(error.message, "error")));
+$("#public-jobs-toggle").addEventListener("change", (event) => savePublicPreference(event.target.checked));
+$("#activation-public-jobs").addEventListener("change", (event) => savePublicPreference(event.target.checked));
 
 $("#clear-terminal").addEventListener("click", () => { visualLogFloor = Math.max(0, ...(snapshot.logs || []).map((log) => log.id)); renderStatus(); });
 window.addEventListener("hashchange", () => showView(location.hash.slice(1) || "overview"));

@@ -29,6 +29,10 @@
       </header>
 
       <section id="view-overview" class="view active" data-view-panel="overview">
+        <section id="operational-status" class="panel operational-card" aria-live="polite">
+          <div class="operational-copy"><span id="operational-eyebrow">WORKER STATUS</span><h2 id="operational-title">Checking readiness…</h2><p id="operational-description">Reading local providers and coordinator state.</p></div>
+          <button id="operational-action" class="primary-action" type="button">Review setup</button>
+        </section>
         <div class="metric-grid">
           <article><span>CONNECTION</span><strong id="metric-connection">Offline</strong><small id="metric-contact">No coordinator contact</small></article>
           <article><span>COMPLETED</span><strong id="metric-completed">0</strong><small>Jobs completed by this session</small></article>
@@ -46,7 +50,54 @@
 
       <section id="view-models" class="view" data-view-panel="models" hidden><div class="page-intro"><p>Read-only detection status for local models, API credentials, and authenticated provider CLIs. Save Configuration or start the worker to refresh detection.</p></div><div id="models-grid" class="models-grid"></div></section>
 
-      <section id="view-config" class="view" data-view-panel="config" hidden><div class="page-intro"><p>One-screen local setup for workers and AI agents. Paste secrets here only; values are saved to local .env and never rendered back.</p><button id="save-config" class="primary-action" type="button">Save configuration</button></div><section class="panel config-panel"><div id="config-message" class="empty-copy">Loading configuration…</div><div class="config-grid"><label>Worker name<input id="cfg-worker-name" autocomplete="off" placeholder="My worker"></label><label>Coordinator URL<input id="cfg-coordinator-url" autocomplete="off"></label><label>Automatic worker ID<input id="cfg-worker-id" readonly aria-readonly="true" placeholder="Created automatically"></label><label>Codex command<input id="cfg-codex-command" autocomplete="off" placeholder="codex"></label><label>Codex model<input id="cfg-codex-model" autocomplete="off" placeholder="optional"></label><label>Ollama model<input id="cfg-ollama-model" autocomplete="off"></label><label>OpenAI API key<input id="cfg-openai-key" type="password" autocomplete="new-password" placeholder="Leave blank to keep existing key"></label><label>OpenAI ChatGPT model<input id="cfg-openai-chatgpt-model" autocomplete="off"></label><label>OpenAI Sol model<input id="cfg-openai-sol-model" autocomplete="off"></label><label>OpenAI image model<input id="cfg-openai-image-model" autocomplete="off"></label><label>Anthropic API key<input id="cfg-anthropic-key" type="password" autocomplete="new-password" placeholder="Leave blank to keep existing key"></label><label>Anthropic model<input id="cfg-anthropic-model" autocomplete="off"></label><label>DeepSeek API key<input id="cfg-deepseek-key" type="password" autocomplete="new-password" placeholder="Leave blank to keep existing key"></label><label>DeepSeek base URL<input id="cfg-deepseek-base-url" autocomplete="off"></label><label>DeepSeek Flash model<input id="cfg-deepseek-flash-model" autocomplete="off"></label><label>DeepSeek Pro model<input id="cfg-deepseek-pro-model" autocomplete="off"></label><label>Higgsfield command<input id="cfg-higgsfield-command" autocomplete="off"></label><label>Genjutsu model ID<input id="cfg-higgsfield-genjutsu" autocomplete="off"></label></div><div class="codex-auth-card"><div><strong>ChatGPT subscription</strong><small id="codex-auth-status">Checking local Codex sign-in…</small></div><div class="codex-auth-actions"><button id="codex-login" class="secondary-action" type="button">Sign in with ChatGPT</button><button id="codex-relogin" class="secondary-action" type="button" hidden>Relogin with ChatGPT</button></div></div><div class="config-switches"><label class="switch-row"><span><strong>Use ChatGPT subscription through Codex</strong><small>Sign in above, then enable the text route and save configuration.</small></span><input id="cfg-subscription-enabled" type="checkbox"><i></i></label><label class="switch-row"><span><strong>Use ChatGPT subscription for images</strong><small>Runs one real low-quality readiness image, then accepts GPT Image jobs only when the probe succeeds.</small></span><input id="cfg-codex-image-enabled" type="checkbox"><i></i></label><label class="switch-row"><span><strong>Enable Higgsfield CLI</strong><small>May consume Higgsfield credits for image/video jobs.</small></span><input id="cfg-higgsfield-enabled" type="checkbox"><i></i></label></div></section></section>
+      <section id="view-config" class="view" data-view-panel="config" hidden>
+        <div class="page-intro setup-intro">
+          <div><p>Choose how this machine will complete work. Only detected providers become available to the network.</p><span id="config-save-state" class="save-state" aria-live="polite">Saved</span></div>
+          <div class="config-actions"><button id="save-config" class="secondary-action" type="button">Save changes</button><button id="save-and-start" class="primary-action" type="button">Save and start</button></div>
+        </div>
+        <section class="panel setup-panel">
+          <div class="setup-progress" aria-label="Setup steps"><span class="active">1 Provider</span><span>2 Connect</span><span>3 Job types</span><span>4 Activate</span></div>
+          <div class="setup-section">
+            <div class="setup-heading"><span>STEP 1</span><h2>Choose your AI provider</h2><p>Start with the account or models already available on this machine.</p></div>
+            <div id="setup-provider" class="provider-choices" role="group" aria-label="AI provider type">
+              <button class="provider-choice active" data-provider-choice="chatgpt" type="button"><strong>ChatGPT subscription</strong><small>Use the local Codex sign-in. No API key required.</small></button>
+              <button class="provider-choice" data-provider-choice="api" type="button"><strong>API provider</strong><small>Use your own OpenAI, Anthropic, DeepSeek, or Higgsfield credentials.</small></button>
+              <button class="provider-choice" data-provider-choice="local" type="button"><strong>Local model</strong><small>Use an Ollama model installed on this machine.</small></button>
+            </div>
+          </div>
+
+          <div class="setup-section provider-pane" data-provider-pane="chatgpt">
+            <div class="setup-heading"><span>STEPS 2–3</span><h2>Connect ChatGPT and choose job types</h2><p>Text is checked through Codex. Image readiness runs a real bounded probe and may use subscription quota.</p></div>
+            <div class="codex-auth-card"><div><strong>ChatGPT subscription</strong><small id="codex-auth-status">Checking local Codex sign-in…</small></div><div class="codex-auth-actions"><button id="codex-login" class="secondary-action" type="button">Sign in with ChatGPT</button><button id="codex-relogin" class="secondary-action" type="button" hidden>Relogin with ChatGPT</button></div></div>
+            <div class="config-switches"><label class="switch-row"><span><strong>Accept text jobs through Codex</strong><small>Uses the authenticated ChatGPT/Codex subscription on this machine.</small></span><input id="cfg-subscription-enabled" type="checkbox"><i></i></label><label class="switch-row"><span><strong>Use ChatGPT subscription for images</strong><small>Runs one real low-quality readiness image, then accepts image jobs only when the probe succeeds.</small></span><input id="cfg-codex-image-enabled" type="checkbox"><i></i></label></div>
+          </div>
+
+          <div class="setup-section provider-pane" data-provider-pane="api" hidden>
+            <div class="setup-heading"><span>STEPS 2–3</span><h2>Connect an API provider</h2><p>Credentials stay in the local .env file and are never rendered back. Provider readiness is verified before capabilities are announced.</p></div>
+            <div class="guided-fields"><label>OpenAI API key <span id="openai-key-state" class="field-state">Not set</span><input id="cfg-openai-key" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved key"></label><label>Anthropic API key <span id="anthropic-key-state" class="field-state">Not set</span><input id="cfg-anthropic-key" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved key"></label><label>DeepSeek API key <span id="deepseek-key-state" class="field-state">Not set</span><input id="cfg-deepseek-key" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved key"></label></div>
+            <label class="switch-row"><span><strong>Enable Higgsfield CLI</strong><small>May consume Higgsfield credits for supported image or video jobs.</small></span><input id="cfg-higgsfield-enabled" type="checkbox"><i></i></label>
+          </div>
+
+          <div class="setup-section provider-pane" data-provider-pane="local" hidden>
+            <div class="setup-heading"><span>STEPS 2–3</span><h2>Use a local model</h2><p>Enter the Ollama model installed on this machine. Availability is checked before the worker advertises it.</p></div>
+            <div class="guided-fields single"><label>Ollama model<input id="cfg-ollama-model" autocomplete="off" placeholder="qwen3:8b"></label></div>
+          </div>
+
+          <div class="setup-section activation-card">
+            <div class="setup-heading"><span>STEP 4</span><h2>Review and activate</h2><p>Starting the worker does not automatically authorize public jobs.</p></div>
+            <div class="activation-summary"><div><span>Selected provider</span><strong id="activation-provider">ChatGPT subscription</strong></div><div><span>Detected routes</span><strong id="activation-capabilities">Checking…</strong></div></div>
+            <label class="switch-row activation-switch"><span><strong>Accept public requests</strong><small>This may use local compute, subscription allowance, or API credits. This preference saves immediately.</small></span><input id="activation-public-jobs" type="checkbox"><i></i></label>
+          </div>
+
+          <details class="advanced-settings">
+            <summary>Advanced settings</summary>
+            <p>Technical identity, coordinator, executable paths, provider model names, and alternative endpoints.</p>
+            <div id="config-message" class="empty-copy">Loading configuration…</div>
+            <div class="config-grid"><label>Worker name<input id="cfg-worker-name" autocomplete="off" placeholder="My worker"></label><label>Coordinator URL<input id="cfg-coordinator-url" autocomplete="off"></label><label>Automatic worker ID<input id="cfg-worker-id" readonly aria-readonly="true" placeholder="Created automatically"></label><label>Codex command<input id="cfg-codex-command" autocomplete="off" placeholder="codex"></label><label>Codex model<input id="cfg-codex-model" autocomplete="off" placeholder="optional"></label><label>OpenAI ChatGPT model<input id="cfg-openai-chatgpt-model" autocomplete="off"></label><label>OpenAI Sol model<input id="cfg-openai-sol-model" autocomplete="off"></label><label>OpenAI image model<input id="cfg-openai-image-model" autocomplete="off"></label><label>Anthropic model<input id="cfg-anthropic-model" autocomplete="off"></label><label>DeepSeek base URL<input id="cfg-deepseek-base-url" autocomplete="off"></label><label>DeepSeek Flash model<input id="cfg-deepseek-flash-model" autocomplete="off"></label><label>DeepSeek Pro model<input id="cfg-deepseek-pro-model" autocomplete="off"></label><label>Higgsfield command<input id="cfg-higgsfield-command" autocomplete="off"></label><label>Genjutsu model ID<input id="cfg-higgsfield-genjutsu" autocomplete="off"></label></div>
+          </details>
+          <div id="config-feedback" class="inline-feedback" role="status" hidden></div>
+        </section>
+      </section>
 
       <section id="view-jobs" class="view" data-view-panel="jobs" hidden><div class="page-intro"><p>Local session history for jobs claimed and completed by this worker.</p></div><section class="panel table-panel"><div class="table-wrap"><table id="jobs-table"><thead><tr><th>Job</th><th>Service</th><th>Prompt</th><th>Status</th><th>Completed</th></tr></thead><tbody id="jobs-body"></tbody></table></div><div id="jobs-empty" class="empty-state">No jobs have been claimed during this local session.</div></section></section>
 

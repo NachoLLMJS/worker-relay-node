@@ -392,6 +392,7 @@ describe("local dashboard server", () => {
           subscriptionCliEnabled: true,
           codexCommand: "/home/operator/.hermes/node/bin/codex",
           codexModel: "gpt-5.1-codex",
+          setupProvider: "api",
           openaiApiKey: "test-openai-placeholder",
           acceptPublicRequests: true
         })
@@ -399,6 +400,7 @@ describe("local dashboard server", () => {
 
       expect(saved.workerAccessTokenSet).toBe(true);
       expect(saved.openaiApiKeySet).toBe(true);
+      expect(saved.setupProvider).toBe("api");
       expect(JSON.stringify(saved)).not.toContain("secret-worker-token");
       expect(JSON.stringify(saved)).not.toContain("test-openai-placeholder");
       expect(runtime.snapshot()).toMatchObject({ workerId: "auto-worker-id", acceptPublicRequests: true });
@@ -407,6 +409,7 @@ describe("local dashboard server", () => {
       expect(written).toContain(`WORKER_ACCESS_TOKEN=bncw_${"z".repeat(43)}`);
       expect(written).toContain("WORKER_CAPABILITIES=text.openai.codex");
       expect(written).toContain("SUBSCRIPTION_CLI_ENABLED=true");
+      expect(written).toContain("SETUP_PROVIDER=api");
     } finally {
       await server.close();
       await rm(dir, { recursive: true, force: true });
@@ -490,10 +493,29 @@ describe("local dashboard server", () => {
     expect(html).toContain('id="codex-auth-status"');
     expect(html).toContain('id="cfg-codex-image-enabled"');
     expect(html).toContain("Use ChatGPT subscription for images");
+    expect(html).toContain('id="operational-status"');
+    expect(html).toContain('id="setup-provider"');
+    expect(html).toContain('data-provider-choice="chatgpt"');
+    expect(html).toContain('data-provider-choice="api"');
+    expect(html).toContain('data-provider-choice="local"');
+    expect(html).toContain('id="activation-public-jobs"');
+    expect(html).toContain('id="save-and-start"');
+    expect(html).toContain('id="config-save-state"');
+    expect(html).toContain("Advanced settings");
+    expect(source).toContain("deriveOperationalStatus");
+    expect(source).toContain("selectSetupProvider");
+    expect(source).toContain("markConfigDirty");
+    expect(source).toContain("publicPreferenceSaving");
+    expect(source).toContain("input:not([readonly]):not(#activation-public-jobs)");
+    expect(source).toContain("if (!publicPreferenceSaving) syncPublicRequestControls");
+    expect(source).toContain("Worker started; provider checks continue in the background.");
+    expect(source).toContain("saveConfig({ startWorker: true })");
     expect(source).toContain("codexImageEnabled");
     expect(html).toContain('id="cfg-worker-id"');
     expect(html).not.toContain('id="cfg-worker-token"');
     expect(css).toContain("--hermes-bg");
+    expect(css).toContain("grid-template-columns:repeat(6,minmax(58px,1fr))");
+    expect(css).toContain("overflow-x:auto");
     expect(source).not.toContain("innerHTML");
     expect(source).not.toContain("localStorage");
     expect(source).not.toContain("ethereum.request");

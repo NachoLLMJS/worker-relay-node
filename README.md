@@ -28,7 +28,7 @@ For the easiest setup, run the local Worker Command Center first:
 npm run dashboard
 ```
 
-The command creates `.env` from `.env.example` if needed, enrolls a private worker identity automatically, and opens `http://127.0.0.1:4317`. No invitation code or manually issued worker token is required. Set a friendly `WORKER_NAME`, save provider credentials/model preferences, enable optional CLI providers, and start/stop polling. The generated `WORKER_ID` and token stay in the local `.env`; capabilities are detected automatically and cannot be selected manually.
+The command creates `.env` from `.env.example` if needed, enrolls a private worker identity automatically, and opens `http://127.0.0.1:4317`. No invitation code or manually issued worker token is required. The guided Configuration flow lets an operator focus on ChatGPT subscription, API providers, or a local model, review public-request authorization, and save or save-and-start. Advanced settings retain the technical identity, coordinator, executable, and model fields. The generated `WORKER_ID` and token stay in the local `.env`; capabilities are detected automatically and cannot be selected manually. `SETUP_PROVIDER` only remembers the dashboard view and never grants a capability.
 
 Anonymous public jobs are disabled by default. Enable `ACCEPT_PUBLIC_REQUESTS` only if you deliberately want those jobs to consume the capabilities, subscriptions, API credits, and local compute enabled on this worker.
 
