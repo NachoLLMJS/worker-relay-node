@@ -488,6 +488,9 @@ describe("local dashboard server", () => {
     expect(html).toContain('id="codex-login"');
     expect(html).toContain("Relogin with ChatGPT");
     expect(html).toContain('id="codex-auth-status"');
+    expect(html).toContain('id="cfg-codex-image-enabled"');
+    expect(html).toContain("Use ChatGPT subscription for images");
+    expect(source).toContain("codexImageEnabled");
     expect(html).toContain('id="cfg-worker-id"');
     expect(html).not.toContain('id="cfg-worker-token"');
     expect(css).toContain("--hermes-bg");

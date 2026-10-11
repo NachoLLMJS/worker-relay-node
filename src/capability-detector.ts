@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { listServices, type ServiceDefinition } from "./service-catalog.js";
 import { assertSubscriptionCliReady, subscriptionCliEnvironment, type SubscriptionProbe } from "./subscription-cli-adapter.js";
+import { probeCodexImageSubscription } from "./codex-image-adapter.js";
 
 type Env = Record<string, string | undefined>;
 type Fetcher = (url: string, init?: RequestInit) => Promise<Response>;
@@ -11,6 +12,7 @@ export type HiggsfieldProbeRunner = (command: string, args: string[], env: NodeJ
 export type DetectionDependencies = {
   fetcher?: Fetcher;
   subscriptionProbe?: SubscriptionProbe;
+  codexImageProbe?: (input: { sourceEnv?: Env; fetcher?: Fetcher }) => Promise<void>;
   higgsfieldRunner?: HiggsfieldProbeRunner;
 };
 
@@ -152,10 +154,12 @@ export async function detectWorkerCapabilities(env: Env = process.env, dependenc
     }
   }
 
+  let codexCliReady = false;
   if (env.SUBSCRIPTION_CLI_ENABLED?.trim().toLowerCase() === "true") {
     try {
       const command = env.CODEX_COMMAND?.trim() || "codex";
       (dependencies.subscriptionProbe ?? assertSubscriptionCliReady)("codex", command, subscriptionCliEnvironment(env));
+      codexCliReady = true;
       available.add("text.openai.codex");
       reasons.set("text.openai.codex", "Codex CLI and ChatGPT login detected.");
     } catch {
@@ -163,6 +167,20 @@ export async function detectWorkerCapabilities(env: Env = process.env, dependenc
     }
   } else {
     reasons.set("text.openai.codex", "Codex subscription support is disabled.");
+  }
+
+  if (env.CODEX_IMAGE_ENABLED?.trim().toLowerCase() === "true" && codexCliReady) {
+    try {
+      await (dependencies.codexImageProbe ?? probeCodexImageSubscription)({ sourceEnv: env, fetcher });
+      available.add("image.openai.codex");
+      reasons.set("image.openai.codex", "Codex OAuth returned a validated image in a live readiness probe.");
+    } catch {
+      reasons.set("image.openai.codex", "Codex image generation could not complete a live readiness probe.");
+    }
+  } else {
+    reasons.set("image.openai.codex", env.CODEX_IMAGE_ENABLED?.trim().toLowerCase() === "true"
+      ? "Codex CLI and ChatGPT login must be ready before subscription images can be enabled."
+      : "Codex subscription image generation is disabled.");
   }
 
   const higgsfieldServices = listServices().filter((service) => service.executor === "higgsfield");

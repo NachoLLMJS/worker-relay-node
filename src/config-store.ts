@@ -15,6 +15,7 @@ export type DashboardConfigSummary = {
   acceptPublicRequests: boolean;
   workerAccessTokenSet: boolean;
   subscriptionCliEnabled: boolean;
+  codexImageEnabled: boolean;
   codexCommand: string;
   codexModel: string;
   ollamaBaseUrl: string;
@@ -40,6 +41,7 @@ export type DashboardConfigUpdate = Partial<{
   workerName: string;
   acceptPublicRequests: boolean;
   subscriptionCliEnabled: boolean;
+  codexImageEnabled: boolean;
   codexCommand: string;
   codexModel: string;
   ollamaBaseUrl: string;
@@ -64,6 +66,7 @@ const KEY_BY_FIELD: Record<keyof DashboardConfigUpdate, string> = {
   workerName: "WORKER_NAME",
   acceptPublicRequests: "ACCEPT_PUBLIC_REQUESTS",
   subscriptionCliEnabled: "SUBSCRIPTION_CLI_ENABLED",
+  codexImageEnabled: "CODEX_IMAGE_ENABLED",
   codexCommand: "CODEX_COMMAND",
   codexModel: "CODEX_MODEL",
   ollamaBaseUrl: "OLLAMA_BASE_URL",
@@ -119,6 +122,7 @@ function summarize(env: Env, services: DetectedService[]): DashboardConfigSummar
     acceptPublicRequests: bool(env.ACCEPT_PUBLIC_REQUESTS),
     workerAccessTokenSet: Boolean(env.WORKER_ACCESS_TOKEN?.trim()),
     subscriptionCliEnabled: bool(env.SUBSCRIPTION_CLI_ENABLED),
+    codexImageEnabled: bool(env.CODEX_IMAGE_ENABLED),
     codexCommand: env.CODEX_COMMAND?.trim() || "codex",
     codexModel: env.CODEX_MODEL?.trim() || "",
     ollamaBaseUrl: env.OLLAMA_BASE_URL?.trim() || "http://127.0.0.1:11434",

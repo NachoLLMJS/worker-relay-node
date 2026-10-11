@@ -6,10 +6,14 @@ import { generateWithOllama } from "./ollama-adapter.js";
 import { generateWithOpenAI } from "./openai-adapter.js";
 import { requireService } from "./service-catalog.js";
 import { generateWithCodexSubscription, type CliRunner } from "./subscription-cli-adapter.js";
+import { generateWithCodexImageSubscription } from "./codex-image-adapter.js";
 
 type Env = Record<string, string | undefined>;
 export type WorkerJob = { id: string; prompt: string; serviceId: string; serviceIds?: string[] };
-type Dependencies = DetectionDependencies & { codexRunner?: CliRunner };
+type Dependencies = DetectionDependencies & {
+  codexRunner?: CliRunner;
+  codexImageGenerate?: typeof generateWithCodexImageSubscription;
+};
 
 function required(env: Env, name: string): string {
   const value = env[name]?.trim();
@@ -56,6 +60,8 @@ export async function buildWorkerExecutor(env: Env = process.env, dependencies: 
         return generateWithDeepSeek({ apiKey: required(env, "DEEPSEEK_API_KEY"), model: (service.configurableModel && env[service.configurableModel]?.trim()) || service.modelId!, baseUrl: env.DEEPSEEK_BASE_URL?.trim(), prompt: job.prompt });
       case "codex-cli":
         return generateWithCodexSubscription({ command: env.CODEX_COMMAND?.trim() || "codex", model: env.CODEX_MODEL?.trim(), prompt: job.prompt, sourceEnv: env, runner: dependencies.codexRunner });
+      case "codex-image":
+        return (dependencies.codexImageGenerate ?? generateWithCodexImageSubscription)({ prompt: job.prompt, sourceEnv: env });
       case "higgsfield": {
         const modelId = serviceId === "video.higgsfield.genjutsu" ? required(env, "HIGGSFIELD_GENJUTSU_MODEL_ID") : service.modelId!;
         return generateWithHiggsfield({ modelId, prompt: job.prompt, args: higgsfieldArgs(serviceId), command: env.HIGGSFIELD_COMMAND?.trim() || "higgsfield", sourceEnv: env });

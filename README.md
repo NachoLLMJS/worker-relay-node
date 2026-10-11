@@ -56,6 +56,7 @@ Text and chat:
 
 Images:
 
+- `image.openai.codex` — GPT Image 2 through the operator's local ChatGPT/Codex subscription OAuth.
 - `image.openai.gpt-image-2` — GPT Image through the native OpenAI Images API.
 - `image.higgsfield.nano-banana-2`
 - `image.higgsfield.seedream-5-pro`
@@ -67,7 +68,7 @@ Video through Higgsfield:
 - `video.higgsfield.genjutsu`
 - `video.higgsfield.kling-3-turbo`
 
-Capabilities are read-only detection results in the dashboard. Ollama is available only when `/api/tags` responds with an installed model; hosted API services require their locally stored credentials to pass an authenticated models-endpoint probe; Codex requires explicit subscription opt-in plus a valid ChatGPT login; Higgsfield requires explicit opt-in plus a successful CLI account probe. `WORKER_CAPABILITIES` remains as a generated compatibility field and is overwritten by detection. API-backed jobs can consume provider credits, while Codex jobs consume the locally authenticated ChatGPT plan's allowance.
+Capabilities are read-only detection results in the dashboard. Ollama is available only when `/api/tags` responds with an installed model; hosted API services require their locally stored credentials to pass an authenticated models-endpoint probe; Codex text requires explicit subscription opt-in plus a valid ChatGPT login; Codex images require a separate opt-in and a live low-quality probe that returns a valid PNG; Higgsfield requires explicit opt-in plus a successful CLI account probe. `WORKER_CAPABILITIES` remains as a generated compatibility field and is overwritten by detection. API-backed jobs can consume provider credits, while Codex jobs consume the locally authenticated ChatGPT plan's allowance.
 
 ## Provider setup
 
@@ -85,7 +86,7 @@ Keep `OLLAMA_BASE_URL=http://127.0.0.1:11434`. If `OLLAMA_MODEL` is not installe
 
 Set `OPENAI_API_KEY` in `.env`. The defaults can be overridden with `OPENAI_CHATGPT_MODEL`, `OPENAI_SOL_MODEL`, and `OPENAI_IMAGE_MODEL`. GPT Image uses OpenAI directly; it is not routed through Higgsfield.
 
-For subscription-backed text jobs, install Codex, run `codex login`, confirm `codex login status` reports a ChatGPT login, and set `SUBSCRIPTION_CLI_ENABLED=true`. Keep the portable default `CODEX_COMMAND=codex`: the worker auto-detects Codex from `PATH` and common per-user, Hermes, and npm-prefix locations, so usernames and home directories do not need to be hard-coded. An absolute command path remains available only as a manual override. Codex runs in an empty temporary directory with shell, browser, computer-use, app, skill, and workspace tools disabled. On Windows, OpenAI currently recommends using Codex inside WSL.
+For subscription-backed text jobs, install Codex, run `codex login`, confirm `codex login status` reports a ChatGPT login, and set `SUBSCRIPTION_CLI_ENABLED=true`. For subscription-backed image jobs, separately enable `CODEX_IMAGE_ENABLED=true`; the worker reads the official local Codex OAuth store server-side, calls the native Codex image endpoint, validates the returned PNG, and never exposes the token to the coordinator or browser. Enabling it runs one real low-quality readiness image before advertising `image.openai.codex`, cached locally for six hours under a non-reversible account fingerprint so restarts and routine token rotation do not repeat the probe. Keep the portable default `CODEX_COMMAND=codex`: the worker auto-detects Codex from `PATH` and common per-user, Hermes, and npm-prefix locations, so usernames and home directories do not need to be hard-coded. An absolute command path remains available only as a manual override. Codex text runs in an empty temporary directory with shell, browser, computer-use, app, skill, and workspace tools disabled. On Windows, OpenAI currently recommends using Codex inside WSL.
 
 ### Anthropic
 
@@ -120,7 +121,7 @@ Then set `HIGGSFIELD_ENABLED=true`. Genjutsu's invocation ID is discovered from 
 - No inbound port is required.
 - Never commit `.env` or paste credentials into chat, issues, screenshots, or logs.
 - Use a dedicated OS account and a machine without wallets, SSH keys, unrelated repositories, or personal files.
-- The worker executes approved adapters only. Codex subscription prompts are text-only: requester prompts are sent through stdin, sensitive worker environment variables are removed, and code/shell/file/browser tools are disabled. Anthropic jobs use `ANTHROPIC_API_KEY` through the Messages API.
+- The worker executes approved adapters only. Codex text prompts are sent through stdin with code/shell/file/browser tools disabled. Codex image prompts go only to the fixed HTTPS image endpoint; the OAuth token stays in the official local Codex store and response bodies are never copied into errors. Anthropic jobs use `ANTHROPIC_API_KEY` through the Messages API.
 - Start with Ollama or one low-risk capability and expand only after a successful `--once` run.
 
 ## Development verification

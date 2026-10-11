@@ -275,6 +275,73 @@ describe("worker provider registry", () => {
     expect(worker.capabilities).toEqual(["text.openai.codex"]);
   });
 
+  it("advertises subscription image generation only after a live image probe succeeds", async () => {
+    const subscriptionProbe = vi.fn();
+    const codexImageProbe = vi.fn(async () => {});
+    const worker = await buildWorkerExecutor({
+      SUBSCRIPTION_CLI_ENABLED: "true",
+      CODEX_IMAGE_ENABLED: "true",
+      CODEX_COMMAND: "codex-test"
+    }, { fetcher: unavailableOllama, subscriptionProbe, codexImageProbe });
+
+    expect(subscriptionProbe).toHaveBeenCalledOnce();
+    expect(codexImageProbe).toHaveBeenCalledOnce();
+    expect(worker.capabilities).toEqual(["text.openai.codex", "image.openai.codex"]);
+  });
+
+  it("keeps Codex text ready when the subscription image probe fails", async () => {
+    const worker = await buildWorkerExecutor({
+      SUBSCRIPTION_CLI_ENABLED: "true",
+      CODEX_IMAGE_ENABLED: "true"
+    }, {
+      fetcher: unavailableOllama,
+      subscriptionProbe: vi.fn(),
+      codexImageProbe: vi.fn(async () => { throw new Error("image unavailable"); })
+    });
+
+    expect(worker.capabilities).toEqual(["text.openai.codex"]);
+    expect(worker.services.find((service) => service.id === "image.openai.codex")).toMatchObject({
+      state: "unavailable",
+      reason: "Codex image generation could not complete a live readiness probe."
+    });
+  });
+
+  it("does not probe or advertise Codex images unless the subscription CLI login is ready", async () => {
+    const codexImageProbe = vi.fn(async () => {});
+    await expect(buildWorkerExecutor({ CODEX_IMAGE_ENABLED: "true" }, {
+      fetcher: unavailableOllama,
+      codexImageProbe
+    })).rejects.toThrow("no provider capabilities");
+    expect(codexImageProbe).not.toHaveBeenCalled();
+
+    await expect(buildWorkerExecutor({
+      SUBSCRIPTION_CLI_ENABLED: "true",
+      CODEX_IMAGE_ENABLED: "true"
+    }, {
+      fetcher: unavailableOllama,
+      subscriptionProbe: vi.fn(() => { throw new Error("signed out"); }),
+      codexImageProbe
+    })).rejects.toThrow("no provider capabilities");
+    expect(codexImageProbe).not.toHaveBeenCalled();
+  });
+
+  it("executes a Codex subscription image lease through the fixed image adapter", async () => {
+    const codexImageGenerate = vi.fn(async () => "data:image/png;base64,aW1hZ2U=");
+    const worker = await buildWorkerExecutor({
+      SUBSCRIPTION_CLI_ENABLED: "true",
+      CODEX_IMAGE_ENABLED: "true"
+    }, {
+      fetcher: unavailableOllama,
+      subscriptionProbe: vi.fn(),
+      codexImageProbe: vi.fn(async () => {}),
+      codexImageGenerate
+    });
+
+    await expect(worker.execute({ id: "image-job", prompt: "draw a network", serviceId: "image.openai.codex" }))
+      .resolves.toBe("data:image/png;base64,aW1hZ2U=");
+    expect(codexImageGenerate).toHaveBeenCalledWith(expect.objectContaining({ prompt: "draw a network" }));
+  });
+
   it("returns single-service output unchanged and composite JSON for combined service requirements", async () => {
     const run = vi.fn(async (serviceId: string) => `result:${serviceId}`);
     await expect(executeSelectedServices({ id: "one", prompt: "hello", serviceId: "text.openai.sol" }, run)).resolves.toBe("result:text.openai.sol");

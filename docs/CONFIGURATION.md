@@ -31,6 +31,7 @@ Capabilities: `text.openai.chatgpt`, `text.openai.sol`, `image.openai.gpt-image-
 ## ChatGPT subscription through Codex
 
 - `SUBSCRIPTION_CLI_ENABLED` — must be exactly `true` before any subscription CLI capability starts.
+- `CODEX_IMAGE_ENABLED` — separate explicit opt-in for `image.openai.codex`. Detection performs one real low-quality image request and advertises the route only if it returns a valid bounded PNG.
 - `CODEX_COMMAND` — default `codex`. Leave this portable value unchanged for normal installations. The worker searches `PATH`, the current Node executable's directory, `~/.hermes/node/bin`, `~/.local/bin`, `~/.npm-global/bin`, and a configured `NPM_CONFIG_PREFIX`. Use an absolute path only as a manual override for an unusual installation.
 - `CODEX_MODEL` — optional Codex model override; blank uses the authenticated plan's default.
 
@@ -42,9 +43,9 @@ codex login
 codex login status
 ```
 
-Capability: `text.openai.codex`.
+Capabilities: `text.openai.codex` and, when separately enabled and live-probed, `image.openai.codex`.
 
-The startup check requires Codex to report `Logged in using ChatGPT`. Jobs run ephemerally in an empty temporary directory with model-generated shell and other external tools disabled. On Windows, run the worker and Codex together inside WSL.
+The text startup check requires Codex to report `Logged in using ChatGPT`. Text jobs run ephemerally in an empty temporary directory with model-generated shell and other external tools disabled. The image adapter reads only ChatGPT OAuth credentials from the official local Codex store, fixes the request origin to `https://chatgpt.com/backend-api/codex/images/generations`, validates base64 and the PNG signature, caps decoded output at 32 MB, and emits only fixed error categories. It does not copy OAuth values into `.env`, the browser, coordinator requests, or logs. On Windows, run the worker and Codex together inside WSL when possible.
 
 Do not commit one person's absolute Codex path to the repository. Auto-discovery is per machine, so `CODEX_COMMAND=codex` works across different usernames and home directories when Codex is installed in one of the supported locations.
 
@@ -74,6 +75,7 @@ Capabilities: `text.deepseek.flash`, `text.deepseek.v4-pro`.
 Image capabilities:
 
 - `image.openai.gpt-image-2` — OpenAI, not Higgsfield.
+- `image.openai.codex` — OpenAI through the local ChatGPT/Codex subscription OAuth, not Higgsfield.
 - `image.higgsfield.nano-banana-2`
 - `image.higgsfield.seedream-5-pro`
 - `image.higgsfield.recraft-4.1`
@@ -88,4 +90,4 @@ The worker uses the authenticated Higgsfield CLI. Run `higgsfield account status
 
 ## Automatic detection
 
-Saving dashboard configuration and starting the worker both refresh detection. The worker advertises only ready services and refuses to start when none are ready. OpenAI, Anthropic, and DeepSeek credentials must successfully authenticate against their configured models endpoint before those services are advertised. Codex additionally requires `SUBSCRIPTION_CLI_ENABLED=true`, a portable executable discovery result, and a successful ChatGPT login probe. Higgsfield additionally requires `HIGGSFIELD_ENABLED=true` and a successful `higgsfield account status --json`; Genjutsu is advertised only when its configured model ID appears in the authenticated model catalog.
+Saving dashboard configuration and starting the worker both refresh detection. The worker advertises only ready services and refuses to start when none are ready. OpenAI, Anthropic, and DeepSeek credentials must successfully authenticate against their configured models endpoint before those services are advertised. Codex text additionally requires `SUBSCRIPTION_CLI_ENABLED=true`, a portable executable discovery result, and a successful ChatGPT login probe. Codex images additionally require `CODEX_IMAGE_ENABLED=true` and a live request that returns a transportable valid PNG. Higgsfield additionally requires `HIGGSFIELD_ENABLED=true` and a successful `higgsfield account status --json`; Genjutsu is advertised only when its configured model ID appears in the authenticated model catalog. Provider opt-ins exist, but capabilities themselves are never manually selected; `WORKER_CAPABILITIES` is overwritten from detection results.

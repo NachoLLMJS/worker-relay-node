@@ -146,6 +146,7 @@ function renderConfig() {
   setInput("#cfg-higgsfield-command", config.higgsfieldCommand);
   setInput("#cfg-higgsfield-genjutsu", config.higgsfieldGenjutsuModelId);
   setChecked("#cfg-subscription-enabled", config.subscriptionCliEnabled);
+  setChecked("#cfg-codex-image-enabled", config.codexImageEnabled);
   setChecked("#cfg-higgsfield-enabled", config.higgsfieldEnabled);
   const secrets = [config.workerId ? `open worker enrolled: ${config.workerId}` : "worker enrollment pending", config.openaiApiKeySet ? "OpenAI key saved" : "OpenAI key missing", config.anthropicApiKeySet ? "Anthropic key saved" : "Anthropic key missing", config.deepseekApiKeySet ? "DeepSeek key saved" : "DeepSeek key missing"];
   setText($("#config-message"), secrets.join(" · "));
@@ -200,6 +201,7 @@ async function saveConfig() {
     coordinatorUrl: inputValue("#cfg-coordinator-url"),
     acceptPublicRequests: $("#public-jobs-toggle").checked,
     subscriptionCliEnabled: $("#cfg-subscription-enabled").checked,
+    codexImageEnabled: $("#cfg-codex-image-enabled").checked,
     codexCommand: inputValue("#cfg-codex-command"),
     codexModel: inputValue("#cfg-codex-model"),
     ollamaModel: inputValue("#cfg-ollama-model"),

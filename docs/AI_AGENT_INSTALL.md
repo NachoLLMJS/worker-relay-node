@@ -25,7 +25,7 @@ https://api-production-cc9f.up.railway.app
    - Ollama: install it, pull the approved model, and verify its local API.
    - OpenAI: add the credential in the dashboard or `.env`; never echo it.
    - Anthropic: add `ANTHROPIC_API_KEY` locally and never echo it. Do not configure a Claude consumer subscription or Claude Code login as a worker credential.
-   - Codex subscription: install the official Codex CLI, have the human complete `codex login`, verify `codex login status`, and set `SUBSCRIPTION_CLI_ENABLED=true` only with operator approval.
+   - Codex subscription: install the official Codex CLI, have the human complete `codex login`, verify `codex login status`, and set `SUBSCRIPTION_CLI_ENABLED=true` only with operator approval. Enable `CODEX_IMAGE_ENABLED=true` separately only when the operator approves a real low-quality image readiness probe and image jobs consuming plan allowance.
    - DeepSeek: add `DEEPSEEK_API_KEY` locally and never echo the credential; both catalog services are detected automatically.
    - Higgsfield: install the official CLI, authenticate interactively, verify `higgsfield account status`, and set `HIGGSFIELD_ENABLED=true`.
 9. Run `npm test`, `npm run typecheck`, `npm run build`, and `npm audit`.
@@ -43,6 +43,7 @@ https://api-production-cc9f.up.railway.app
 - Never run it on a machine containing wallets, signing keys, personal documents, or unrelated production credentials.
 - Never copy OAuth tokens, browser cookies, CLI credential files, or subscription sessions into `.env` or chat. The human authenticates directly with the official CLI.
 - Set `SUBSCRIPTION_CLI_ENABLED=true` only after the operator explicitly approves ChatGPT plan usage and Codex reports a valid local login.
+- Set `CODEX_IMAGE_ENABLED=true` only after the operator approves subscription image usage; never copy `~/.codex/auth.json`, access tokens, refresh tokens, cookies, or OAuth values into `.env`, chat, logs, or the coordinator.
 - Stop if TLS validation fails, the coordinator origin differs, provider authentication is rejected, or the repository has unexpected uncommitted executable changes.
 - Higgsfield generation can consume credits. Require explicit `HIGGSFIELD_ENABLED=true`; account readiness and service availability are then detected automatically.
 - For Genjutsu, discover the exact current model ID from the authenticated Higgsfield model list. Do not guess it.

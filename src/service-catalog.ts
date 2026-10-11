@@ -6,7 +6,7 @@ export interface ServiceDefinition {
   kind: ServiceKind;
   provider: "Local" | "OpenAI" | "Anthropic" | "DeepSeek" | "Higgsfield";
   description: string;
-  executor: "ollama" | "openai" | "anthropic" | "deepseek" | "higgsfield" | "codex-cli";
+  executor: "ollama" | "openai" | "anthropic" | "deepseek" | "higgsfield" | "codex-cli" | "codex-image";
   modelId?: string;
   configurableModel?: string;
 }
@@ -79,6 +79,15 @@ const services = [
     executor: "deepseek",
     modelId: "deepseek-v4-pro",
     configurableModel: "DEEPSEEK_PRO_MODEL"
+  },
+  {
+    id: "image.openai.codex",
+    label: "GPT Image 2 subscription",
+    kind: "image",
+    provider: "OpenAI",
+    description: "Native GPT Image generation through the operator's local ChatGPT/Codex subscription login.",
+    executor: "codex-image",
+    modelId: "gpt-image-2"
   },
   {
     id: "image.openai.gpt-image-2",

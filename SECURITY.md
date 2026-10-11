@@ -13,7 +13,7 @@ This repository is for an open-enrollment Worker Relay beta. Report vulnerabilit
 - The worker receives no PostgreSQL credentials, Railway administration credential, wallet key, or contract key.
 - The node makes outbound HTTPS requests and requires no inbound port.
 - Prompts are data. The worker does not execute shell commands or arbitrary code from prompts.
-- The Codex subscription adapter runs in a new empty temporary directory for every job, receives prompts through stdin, inherits only an environment allowlist, and has command/code/file/browser tools disabled. Anthropic jobs use an API key through the Messages API; Claude consumer subscription sessions are not supported.
+- The Codex text adapter runs in a new empty temporary directory for every job, receives prompts through stdin, inherits only an environment allowlist, and has command/code/file/browser tools disabled. The Codex image adapter reads the official local ChatGPT OAuth store only in the worker process, calls a fixed HTTPS origin, validates bounded PNG output, and never returns token material or provider response bodies in errors. Anthropic jobs use an API key through the Messages API; Claude consumer subscription sessions are not supported.
 - Higgsfield is invoked with `spawn(..., { shell: false })`; prompt text is passed as one argument rather than interpreted by a shell.
 
 ## Operator rules
@@ -36,4 +36,4 @@ This repository is for an open-enrollment Worker Relay beta. Report vulnerabilit
 - Generated media URLs may be hosted by the selected provider and may expire.
 - The coordinator does not currently meter provider cost or reimburse worker owners.
 - Do not process secrets, regulated data, confidential source repositories, or personal documents.
-- Codex subscription support is limited to text responses. It does not grant requesters access to the operator's filesystem or an interactive coding workspace.
+- Codex subscription support is limited to fixed text and native image adapters. It does not grant requesters access to the operator's filesystem, OAuth store, browser session, or an interactive coding workspace.
